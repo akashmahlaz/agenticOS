@@ -184,6 +184,12 @@ When given a task:
     let fullText = "";
     let reasoningSteps: Array<{ title: string; status: string }> = [];
     let toolCalls: Array<{ name: string; args: Record<string, unknown>; result?: unknown }> = [];
+    interface SourceItem {
+      title?: string;
+      url?: string;
+      snippet?: string;
+    }
+    let sources: SourceItem[] = [];
 
     // Stream as NDJSON
     const stream = new ReadableStream({
@@ -209,10 +215,28 @@ When given a task:
               data.args = c.args ?? c.input ?? {};
             } else if (c.type === "tool-result") {
               const tc = toolCalls.find((t) => t.name === c.toolName);
-              if (tc) tc.result = c.output ?? c.result;
+              const result = c.output ?? c.result;
+              if (tc) tc.result = result;
               data.type = "tool-result";
               data.toolName = c.toolName;
-              data.result = c.output ?? c.result;
+              data.result = result;
+
+              // If the result is from web search / deep research, emit as sources
+              if (c.toolName === "webSearch" || c.toolName === "deepResearch" || c.toolName === "search") {
+                const r = result as any;
+                if (r?.results && Array.isArray(r.results)) {
+                  sources.push(...r.results);
+                  // Also emit a sources event for the client
+                  controller.enqueue(
+                    encoder.encode(JSON.stringify({ type: "sources", items: r.results }) + "\n")
+                  );
+                } else if (Array.isArray(result)) {
+                  sources.push(...(result as SourceItem[]));
+                  controller.enqueue(
+                    encoder.encode(JSON.stringify({ type: "sources", items: result }) + "\n")
+                  );
+                }
+              }
             } else if (c.type === "reasoning-delta" || c.type === "reasoning-start") {
               data.type = "reasoning";
               data.text = c.textDelta ?? c.text ?? "";
