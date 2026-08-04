@@ -1,0 +1,66 @@
+// Prisma schema for agenticOS
+// Neon PostgreSQL
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ──────────────────────────────────────────────
+// User
+// ──────────────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions Session[]
+}
+
+// ──────────────────────────────────────────────
+// Session — a single chat thread
+// ──────────────────────────────────────────────
+model Session {
+  id     String @id @default(cuid())
+  title  String @default("New Chat")
+  model  String @default("MiniMax-M2")
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  messages Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ──────────────────────────────────────────────
+// Message — a single turn in a session
+// ──────────────────────────────────────────────
+model Message {
+  id    String @id @default(cuid())
+  role  String  // "user" | "assistant" | "system" | "tool"
+
+  content         String   @db.Text
+  reasoningSteps  Json     @default("[]")
+  toolCalls       Json     @default("[]")
+  citations       Json     @default("[]")
+  usage           Json?
+  model           String?
+
+  sessionId String
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([sessionId, createdAt])
+}
