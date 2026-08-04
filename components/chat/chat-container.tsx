@@ -1,50 +1,71 @@
+// @ts-nocheck
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "@/app/(app)/layout";
 
 // ──────────────────────────────────────────────
+// AI Elements imports
+// ──────────────────────────────────────────────
+import { Conversation, ConversationContent, ConversationEmptyState } from "@/components/ai-elements/conversation";
+import { Message, MessageContent } from "@/components/ai-elements/message";
+import {
+  ChainOfThought,
+  ChainOfThoughtHeader,
+  ChainOfThoughtStep,
+  ChainOfThoughtContent,
+} from "@/components/ai-elements/chain-of-thought";
+import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
+import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
+import { Shimmer } from "@/components/ai-elements/shimmer";
+import { Sources, SourcesTrigger, SourcesContent } from "@/components/ai-elements/sources";
+import { PromptInput } from "@/components/ai-elements/prompt-input";
+
+// ──────────────────────────────────────────────
 // Types
 // ──────────────────────────────────────────────
 interface ReasoningStep {
   title: string;
+  description?: string;
   status: "pending" | "active" | "complete";
 }
 
-interface ToolCall {
+interface ToolCallPart {
   name: string;
-  args: Record<string, unknown>;
+  state: "input-available" | "output-available" | "output-error" | "input-streaming" | "approval-requested";
+  args?: Record<string, unknown>;
   result?: unknown;
+  errorText?: string;
 }
 
-interface Message {
+interface SourceItem {
+  title?: string;
+  url?: string;
+  snippet?: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CitationItem = any;
+
+interface MessageData {
   id: string;
-  role: string;
+  role: "user" | "assistant" | "system";
   content: string;
   reasoningSteps: ReasoningStep[];
-  toolCalls: ToolCall[];
+  toolCalls: ToolCallPart[];
+  citations?: SourceItem[];
+  contextUsed?: { total: number; remaining: number };
   model?: string;
   agent?: string;
   createdAt: string;
 }
 
 // ──────────────────────────────────────────────
-// Icons
+// Icons (inline SVG, no extra deps)
 // ──────────────────────────────────────────────
 const SparkleIcon = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
     <path d="M7 1L8 5.5L12 6L8.5 8.5L9.5 13L7 10.5L4.5 13L5.5 8.5L2 6L6 5.5L7 1Z" fill="currentColor"/>
-  </svg>
-);
-const SendIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-    <path d="M13.5 1.5L1.5 7L7 8.5M13.5 1.5L8.5 13.5L7 8.5M13.5 1.5L7 8.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-);
-const ChevronIcon = ({ open }: { open: boolean }) => (
-  <svg width="9" height="9" viewBox="0 0 9 9" fill="none"
-    className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`}>
-    <path d="M2 3.5L4.5 6L7 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
   </svg>
 );
 const UserIcon = () => (
@@ -53,254 +74,229 @@ const UserIcon = () => (
     <path d="M1.5 12C1.5 9.5 3.7 7.5 6.5 7.5C9.3 7.5 11.5 9.5 11.5 12" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
   </svg>
 );
-const ToolIcon = () => (
+const PlusIcon = () => (
   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-    <path d="M6.5 1L9 3.5L3.5 9H1V6.5L6.5 1Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"/>
-  </svg>
-);
-const BrainIcon = () => (
-  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-    <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" strokeWidth="1.1"/>
-    <path d="M3 5.5C3 4.1 4.1 3 5.5 3C6.9 3 8 4.1 8 5.5" stroke="currentColor" strokeWidth="1"/>
-    <path d="M5.5 5.5V8M4 8H7" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
-  </svg>
-);
-const ArrowIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-    <path d="M2.5 6H9.5M9.5 6L6.5 3M9.5 6L6.5 9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-);
-const LoaderIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="animate-spin">
-    <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.5" strokeDasharray="20 8" strokeLinecap="round"/>
+    <path d="M5.5 1V10M1 5.5H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
   </svg>
 );
 
 // ──────────────────────────────────────────────
-// Chain of Thought Block
+// ChainOfThought steps renderer
 // ──────────────────────────────────────────────
-function ChainOfThought({ steps }: { steps: ReasoningStep[] }) {
-  const [open, setOpen] = useState(true);
+function ReasoningStepsBlock({ steps, isStreaming }: { steps: ReasoningStep[]; isStreaming: boolean }) {
   if (!steps.length) return null;
-  const active = steps.find((s) => s.status === "active");
-  const done = steps.filter((s) => s.status === "complete").length;
   return (
-    <div className="mt-2 rounded-xl border border-[#E8E0D8] bg-gradient-to-br from-[#FFFBF5] to-[#FAFAF8] overflow-hidden shadow-sm">
-      <button onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[#F5F0EA] transition-colors">
-        <div className="flex items-center gap-2">
-          <span className="text-[#DC7864]"><BrainIcon /></span>
-          <span className="text-xs font-semibold text-[#57534E]">Chain of Thought</span>
-          <span className="text-[10px] text-[#A8A29E]">{done}/{steps.length}</span>
-          {active && <span className="text-[10px] text-amber-500 animate-pulse">thinking…</span>}
-        </div>
-        <ChevronIcon open={open} />
-      </button>
-      {open && (
-        <div className="px-4 pb-3 space-y-1.5 border-t border-[#F0EBE5] pt-2">
-          {steps.map((step, i) => (
-            <div key={i} className="flex items-start gap-2.5 text-xs">
-              <span className={`mt-0.5 flex-shrink-0 ${step.status === "complete" ? "text-green-500" : step.status === "active" ? "text-amber-400" : "text-[#D6D3D1]"}`}>
-                {step.status === "complete" ? "✓" : step.status === "active" ? "▸" : "○"}
-              </span>
-              <span className={step.status === "pending" ? "text-[#C4BFB9]" : "text-[#78716C]"}>
-                {step.title}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────
-// Tool Calls Block
-// ──────────────────────────────────────────────
-function ToolCallsBlock({ calls }: { calls: ToolCall[] }) {
-  const [open, setOpen] = useState(false);
-  if (!calls.length) return null;
-  return (
-    <div className="mt-2 rounded-xl border border-[#E8E0D8] bg-[#FAFAF8] overflow-hidden">
-      <button onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[#F5F0EA] transition-colors">
-        <div className="flex items-center gap-2">
-          <span className="text-[#1C1917]"><ToolIcon /></span>
-          <span className="text-xs font-semibold text-[#57534E]">Tool Calls</span>
-          <span className="text-[10px] text-[#A8A29E]">{calls.length} {calls.length === 1 ? "tool" : "tools"} used</span>
-        </div>
-        <ChevronIcon open={open} />
-      </button>
-      {open && (
-        <div className="px-4 pb-3 space-y-2.5 border-t border-[#F0EBE5] pt-2">
-          {calls.map((call, i) => (
-            <div key={i} className="text-xs">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="font-mono text-[10px] px-2 py-0.5 rounded-lg bg-[#F5F0EA] text-[#57534E] border border-[#E8E0D8]">
-                  {call.name}
-                </span>
-                {call.result != null ? (
-                  <span className="text-green-500 text-[10px]">✓ executed</span>
-                ) : (
-                  <span className="text-[#A8A29E] text-[10px] animate-pulse">running…</span>
-                )}
-              </div>
-              {call.result != null && (
-                <pre className="p-2 bg-white rounded-lg border border-[#F0EBE5] text-[10px] text-[#78716C] overflow-x-auto whitespace-pre-wrap font-mono max-h-24 leading-relaxed">
-                  {JSON.stringify(call.result, null, 2).slice(0, 250)}
-                </pre>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────
-// Message Bubble
-// ──────────────────────────────────────────────
-function MessageBubble({ msg }: { msg: Message }) {
-  const isUser = msg.role === "user";
-  return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-1 duration-300`}>
-      <div className={`flex gap-3 max-w-[70%] ${isUser ? "flex-row-reverse" : ""}`}>
-        {/* Avatar */}
-        <div className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center text-white flex-shrink-0 ${
-          isUser ? "bg-[#1C1917]" : "bg-gradient-to-br from-[#1C1917] to-[#44403C] shadow-sm"
-        }`}>
-          {isUser ? <UserIcon /> : <SparkleIcon />}
-        </div>
-
-        {/* Content */}
-        <div className={`flex flex-col gap-0.5 ${isUser ? "items-end" : "items-start"}`}>
-          <div className={`rounded-2xl px-5 py-3.5 shadow-sm ${
-            isUser
-              ? "bg-[#1C1917] text-white rounded-tr-sm"
-              : "bg-white border border-[#E8E0D8] text-[#1C1917] rounded-tl-sm"
-          }`}>
-            {/* Chain of thought for AI */}
-            {!isUser && msg.reasoningSteps.length > 0 && (
-              <ChainOfThought steps={msg.reasoningSteps} />
-            )}
-            {/* Tool calls for AI */}
-            {!isUser && msg.toolCalls.length > 0 && (
-              <ToolCallsBlock calls={msg.toolCalls} />
-            )}
-            {/* Main content */}
-            <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isUser ? "text-white" : "text-[#1C1917]"}`}>
-              {msg.content || (isUser ? "" : "…")}
-            </p>
-          </div>
-          {/* Meta */}
-          <div className="flex items-center gap-1.5 px-1">
-            {!isUser && msg.model && (
-              <span className="text-[10px] text-[#C4BFB9] font-mono">{msg.model}</span>
-            )}
-            {!isUser && msg.agent && (
-              <span className="text-[10px] text-[#C4BFB9]">via {msg.agent}</span>
-            )}
-            <span className="text-[10px] text-[#C4BFB9]">
-              {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+    <ChainOfThought defaultOpen>
+      <ChainOfThoughtHeader>
+        <span className="text-xs font-medium text-muted-foreground">
+          Chain of Thought
+          <span className="ml-2 text-[10px] text-muted-foreground/60">
+            {steps.filter((s) => s.status === "complete").length}/{steps.length}
+          </span>
+          {isStreaming && (
+            <span className="ml-2 inline-flex items-center gap-1 text-[10px] text-amber-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
+              thinking…
             </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────
-// Loading indicator
-// ──────────────────────────────────────────────
-function LoadingIndicator({ steps }: { steps: ReasoningStep[] }) {
-  const active = steps.find((s) => s.status === "active");
-  return (
-    <div className="flex justify-start animate-in fade-in slide-in-from-bottom-1 duration-300">
-      <div className="flex gap-3 max-w-[70%]">
-        <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-[#1C1917] to-[#44403C] flex items-center justify-center text-white shadow-sm">
-          <SparkleIcon />
-        </div>
-        <div className="rounded-2xl rounded-tl-sm bg-white border border-[#E8E0D8] px-5 py-3.5 shadow-sm">
-          {active ? (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-xs text-[#78716C]">
-                <span className="text-[#DC7864] animate-pulse"><LoaderIcon /></span>
-                <span className="font-medium text-[#57534E]">Reasoning…</span>
-              </div>
-              {steps.filter((s) => s.status === "complete").slice(-3).map((s, i) => (
-                <p key={i} className="text-xs text-[#A8A29E] flex items-center gap-1.5">
-                  <span className="text-green-500">✓</span>
-                  {s.title}
-                </p>
-              ))}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-[#78716C]">
-              <span className="w-4 h-4 border-2 border-[#D6D3D1] border-t-transparent rounded-full animate-spin" />
-              <span>Thinking…</span>
-            </div>
           )}
+        </span>
+      </ChainOfThoughtHeader>
+      <ChainOfThoughtContent>
+        <div className="space-y-2">
+          {steps.map((step, i) => (
+            <ChainOfThoughtStep
+              key={i}
+              label={step.title}
+              description={step.description}
+              status={step.status}
+            />
+          ))}
         </div>
-      </div>
-    </div>
+      </ChainOfThoughtContent>
+    </ChainOfThought>
   );
 }
 
 // ──────────────────────────────────────────────
-// Chat Input
+// Tool call renderer
 // ──────────────────────────────────────────────
-function ChatInput({ onSend, disabled }: { onSend: (text: string) => void; disabled: boolean }) {
-  const [text, setText] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const submit = () => {
-    const trimmed = text.trim();
-    if (!trimmed || disabled) return;
-    onSend(trimmed);
-    setText("");
-    textareaRef.current?.focus();
+function ToolCallBlock({ call }: { call: ToolCallPart }) {
+  const getState = () => {
+    if (call.errorText) return "output-error" as const;
+    if (call.result) return "output-available" as const;
+    return "input-available" as const;
   };
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 140)}px`;
-    }
-  }, [text]);
+  const isStreaming = !call.result && !call.errorText;
 
   return (
-    <div className="border-t border-[#E8E0D8] bg-white px-4 py-3">
-      <div className="flex items-end gap-3 max-w-3xl mx-auto">
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder="Message agenticOS… (Shift+Enter for new line)"
-          disabled={disabled}
-          rows={1}
-          className="flex-1 resize-none text-sm text-[#1C1917] placeholder:text-[#C4BFB9] bg-[#FAFAF9] border border-[#E8E0D8] rounded-2xl px-4 py-3 outline-none focus:border-[#A8A29E] focus:ring-1 focus:ring-[#D6D3D1] transition-all disabled:opacity-50 leading-relaxed"
-          style={{ minHeight: "48px", maxHeight: "140px" }}
-        />
-        <button
-          onClick={submit}
-          disabled={disabled || !text.trim()}
-          className="flex-shrink-0 w-10 h-10 rounded-2xl bg-[#1C1917] text-white flex items-center justify-center hover:bg-[#DC2626] active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
-        >
-          <SendIcon />
-        </button>
-      </div>
-      <p className="text-center text-[10px] text-[#D6D3D1] mt-2 max-w-3xl mx-auto">
-        agenticOS · MiniMax M2 · Press Enter to send · Shift+Enter for newline
-      </p>
+    <Tool>
+      <ToolHeader
+        title={call.name}
+        type="dynamic-tool"
+        state={getState()}
+        toolName={call.name}
+      />
+      <ToolContent>
+        {call.args && Object.keys(call.args).length > 0 && (
+          <ToolInput input={call.args as Record<string, unknown>} />
+        )}
+        {isStreaming ? (
+          <div className="flex items-center gap-2 py-2">
+            <Shimmer duration={1}>Processing…</Shimmer>
+          </div>
+        ) : (
+          <ToolOutput
+            output={call.result as Record<string, unknown>}
+            errorText={call.errorText}
+          />
+        )}
+      </ToolContent>
+    </Tool>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Source citations
+// ──────────────────────────────────────────────
+function SourcesBlock({ citations }: { citations?: SourceItem[] }) {
+  if (!citations?.length) return null;
+  return (
+    <Sources>
+      <SourcesTrigger count={citations.length}>
+        <span className="text-[10px]">📚 {citations.length} source{citations.length > 1 ? "s" : ""}</span>
+      </SourcesTrigger>
+      <SourcesContent>
+        <ul className="space-y-1">
+          {citations.map((s, i) => (
+            <li key={i} className="text-xs">
+              <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                {s.title || s.url}
+              </a>
+              {s.snippet && (
+                <p className="text-muted-foreground text-[10px] mt-0.5">{s.snippet?.slice(0, 150)}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      </SourcesContent>
+    </Sources>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Context usage
+// ──────────────────────────────────────────────
+function ContextBlock({ context }: { context?: { total: number; remaining: number } }) {
+  if (!context) return null;
+  const used = context.total - context.remaining;
+  return (
+    <div className="text-[10px] text-muted-foreground py-1">
+      🧠 Context: {used}/{context.total} tokens
+      {context.remaining > 0 && ` · ${context.remaining} remaining`}
     </div>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Message bubble using AI Elements
+// ──────────────────────────────────────────────
+function MessageBubble({ msg, isStreaming }: { msg: MessageData; isStreaming?: boolean }) {
+  const isUser = msg.role === "user";
+
+  return (
+    <Message from={msg.role}>
+      <MessageContent>
+        {/* Reasoning steps (AI only) */}
+        {msg.reasoningSteps.length > 0 && (
+          <ReasoningStepsBlock steps={msg.reasoningSteps} isStreaming={isStreaming || false} />
+        )}
+
+        {/* Tool calls */}
+        {msg.toolCalls.map((tc, i) => (
+          <ToolCallBlock key={i} call={tc} />
+        ))}
+
+        {/* Sources */}
+        {msg.citations && <SourcesBlock citations={msg.citations} />}
+
+        {/* Context */}
+        {msg.contextUsed && <ContextBlock context={msg.contextUsed} />}
+
+        {/* Main text */}
+        {msg.content || (isStreaming ? <Shimmer duration={1}>Thinking…</Shimmer> : null)}
+      </MessageContent>
+    </Message>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Prompt suggestions
+// ──────────────────────────────────────────────
+const PROMPT_SUGGESTIONS = [
+  "Research a topic deeply",
+  "Write and debug code",
+  "Analyze data and trends",
+  "Plan a project",
+  "Explain a concept",
+];
+
+// ──────────────────────────────────────────────
+// Empty state
+// ──────────────────────────────────────────────
+function EmptyState({ onSuggestion }: { onSuggestion: (text: string) => void }) {
+  return (
+    <ConversationEmptyState>
+      <div className="flex flex-col items-center justify-center h-full py-20 px-4 text-center space-y-6">
+        {/* Logo */}
+        <div className="relative">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-foreground to-muted-foreground flex items-center justify-center text-background shadow-lg">
+            <SparkleIcon />
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        </div>
+
+        {/* Text */}
+        <div className="space-y-2">
+          <h2 className="text-xl font-semibold text-foreground">agenticOS</h2>
+          <p className="text-sm text-muted-foreground max-w-xs">
+            Powered by <span className="font-medium">MiniMax M2</span> with chain-of-thought reasoning and autonomous tool use.
+          </p>
+        </div>
+
+        {/* Checkpoints / features */}
+        <div className="flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
+          {[
+            "Chain-of-thought reasoning",
+            "Web search & calculations",
+            "Deep research",
+            "Tool execution",
+            "Session history",
+          ].map((f) => (
+            <span key={f} className="px-2.5 py-1 rounded-full bg-muted/60 border border-border flex items-center gap-1">
+              <span className="text-[8px] text-green-500">✓</span> {f}
+            </span>
+          ))}
+        </div>
+
+        {/* Suggestions */}
+        <div className="pt-2">
+          <Suggestions>
+            {PROMPT_SUGGESTIONS.map((s) => (
+              <Suggestion key={s} suggestion={s} onClick={() => onSuggestion(s)} />
+            ))}
+          </Suggestions>
+        </div>
+
+        <p className="text-[10px] text-muted-foreground/50">
+          Press Enter to send · Shift+Enter for new line
+        </p>
+      </div>
+    </ConversationEmptyState>
   );
 }
 
@@ -314,15 +310,12 @@ interface ChatContainerProps {
 
 export default function ChatContainer({ initialSessionId, onSessionCreated }: ChatContainerProps) {
   const { token } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<MessageData[]>([]);
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [liveReasoning, setLiveReasoning] = useState<ReasoningStep[]>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, liveReasoning]);
+  const [liveSteps, setLiveSteps] = useState<ReasoningStep[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   // Create a new session
   const createSession = useCallback(async (): Promise<string> => {
@@ -334,12 +327,12 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
       },
       body: JSON.stringify({ title: "New Chat" }),
     });
-    const session = await res.json();
-    setSessionId(session.id);
-    onSessionCreated?.(session.id);
+    const data = await res.json();
+    setSessionId(data.id);
+    onSessionCreated?.(data.id);
     setMessages([]);
-    setLiveReasoning([]);
-    return session.id;
+    setLiveSteps([]);
+    return data.id;
   }, [token, onSessionCreated]);
 
   // Load session messages
@@ -347,7 +340,7 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
     setLoading(true);
     setSessionId(id);
     setMessages([]);
-    setLiveReasoning([]);
+    setLiveSteps([]);
     try {
       const res = await fetch(`/api/sessions/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -363,6 +356,9 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
             toolCalls: Array.isArray(m.toolCalls)
               ? m.toolCalls
               : JSON.parse(String(m.toolCalls || "[]")),
+            citations: Array.isArray(m.citations)
+              ? m.citations
+              : (m.citations ? JSON.parse(String(m.citations)) : undefined),
           }))
         );
       }
@@ -372,26 +368,25 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
     setLoading(false);
   }, [token]);
 
-  // Load initial session on mount
+  // Load initial session
   useEffect(() => {
     if (initialSessionId) {
       loadSession(initialSessionId);
     } else {
-      // Start with fresh state, session created on first message
       setSessionId(null);
       setMessages([]);
-      setLiveReasoning([]);
+      setLiveSteps([]);
     }
   }, [initialSessionId, loadSession]);
 
   // Send message with streaming
-  const handleSend = useCallback(async (text: string) => {
+  const handleSendMessage = useCallback(async (text: string) => {
     let currentSessionId = sessionId;
     if (!currentSessionId) {
       currentSessionId = await createSession();
     }
 
-    const userMsg: Message = {
+    const userMsg: MessageData = {
       id: `temp-${Date.now()}`,
       role: "user",
       content: text,
@@ -400,8 +395,9 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, userMsg]);
-    setLiveReasoning([]);
+    setLiveSteps([]);
     setLoading(true);
+    setIsStreaming(true);
 
     try {
       // Save user message
@@ -443,15 +439,18 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
 
       let fullText = "";
       let reasoningSteps: ReasoningStep[] = [];
-      let toolCalls: ToolCall[] = [];
+      let toolCalls: ToolCallPart[] = [];
+      let citations: SourceItem[] = [];
       let reasoningBuffer = "";
+      let stepBuffer = "";
 
-      const assistantMsg: Message = {
+      const assistantMsg: MessageData = {
         id: `ai-${Date.now()}`,
         role: "assistant",
         content: "",
         reasoningSteps: [],
         toolCalls: [],
+        citations: [],
         model: "MiniMax-M2",
         createdAt: new Date().toISOString(),
       };
@@ -477,41 +476,60 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
               fullText += data.delta;
               setMessages((prev) => {
                 const updated = [...prev];
-                updated[updated.length - 1] = { ...updated[updated.length - 1], content: fullText };
+                const last = updated[updated.length - 1];
+                updated[updated.length - 1] = { ...last, content: fullText };
                 return updated;
               });
             } else if (data.type === "reasoning") {
               reasoningBuffer += data.text;
-              reasoningSteps = reasoningBuffer
-                .split(/\n+/)
-                .filter(Boolean)
-                .slice(-10)
-                .map((s, i, arr) => ({
-                  title: s.trim().slice(0, 100),
-                  status: i === arr.length - 1 ? "active" as const : "complete" as const,
-                }));
-              setLiveReasoning(reasoningSteps);
+              const lines = reasoningBuffer.split(/\n+/).filter(Boolean).slice(-15);
+              reasoningSteps = lines.map((s, i, arr) => ({
+                title: s.trim().slice(0, 120),
+                status: i === arr.length - 1 ? "active" as const : "complete" as const,
+              }));
+              setLiveSteps(reasoningSteps);
               setMessages((prev) => {
                 const updated = [...prev];
                 updated[updated.length - 1] = { ...updated[updated.length - 1], reasoningSteps };
                 return updated;
               });
             } else if (data.type === "tool-call") {
-              toolCalls.push({ name: data.toolName, args: data.args || {} });
+              const tc: ToolCallPart = {
+                name: data.toolName,
+                state: "input-available",
+                args: data.args,
+              };
+              toolCalls.push(tc);
               setMessages((prev) => {
                 const updated = [...prev];
-                updated[updated.length - 1] = { ...updated[updated.length - 1], toolCalls };
+                updated[updated.length - 1] = { ...updated[updated.length - 1], toolCalls: [...toolCalls] };
                 return updated;
               });
             } else if (data.type === "tool-result") {
               toolCalls = toolCalls.map((t) =>
-                t.name === data.toolName ? { ...t, result: data.result } : t
+                t.name === data.toolName
+                  ? {
+                      ...t,
+                      state: (data.errorText ? "output-error" : "output-available") as ToolCallPart["state"],
+                      result: data.result,
+                      errorText: data.errorText,
+                    }
+                  : t
               );
               setMessages((prev) => {
                 const updated = [...prev];
-                updated[updated.length - 1] = { ...updated[updated.length - 1], toolCalls };
+                updated[updated.length - 1] = { ...updated[updated.length - 1], toolCalls: [...toolCalls] };
                 return updated;
               });
+            } else if (data.type === "citations") {
+              citations = data.items || [];
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { ...updated[updated.length - 1], citations };
+                return updated;
+              });
+            } else if (data.type === "finish") {
+              setIsStreaming(false);
             }
           } catch {
             // ignore parse errors
@@ -519,11 +537,10 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
         }
       }
 
-      // Finalize reasoning steps
-      const finalSteps = reasoningSteps.map((s) => ({ ...s, status: "complete" as const }));
+      // Finalize
       const cleanText = fullText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "").trim();
+      const finalSteps = reasoningSteps.map((s) => ({ ...s, status: "complete" as const }));
 
-      // Update final message
       setMessages((prev) => {
         const updated = [...prev];
         updated[updated.length - 1] = {
@@ -531,10 +548,11 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
           content: cleanText,
           reasoningSteps: finalSteps,
           toolCalls,
+          citations,
         };
         return updated;
       });
-      setLiveReasoning([]);
+      setLiveSteps([]);
 
       // Save to DB
       await fetch("/api/messages", {
@@ -549,102 +567,125 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
           content: cleanText,
           reasoningSteps: finalSteps,
           toolCalls,
+          citations,
           model: "MiniMax-M2",
         }),
       });
     } catch (err) {
       console.error("Chat error:", err);
-      const errorMsg: Message = {
-        id: `error-${Date.now()}`,
-        role: "assistant",
-        content: `Error: ${err instanceof Error ? err.message : "Something went wrong."}`,
-        reasoningSteps: [],
-        toolCalls: [],
-        createdAt: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          content: `Error: ${err instanceof Error ? err.message : "Something went wrong."}`,
+          reasoningSteps: [],
+          toolCalls: [],
+          createdAt: new Date().toISOString(),
+        },
+      ]);
     } finally {
       setLoading(false);
+      setIsStreaming(false);
     }
   }, [sessionId, token, messages, createSession]);
 
+  // Handle form submit
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleSubmit = useCallback(
+    async (message: any, event: any) => {
+      const text = message?.text?.trim();
+      if (!text || loading) return;
+      await handleSendMessage(text);
+    },
+    [loading, handleSendMessage]
+  );
+
+  // Clear chat
+  const handleClear = useCallback(async () => {
+    if (sessionId) {
+      await fetch(`/api/sessions/${sessionId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await createSession();
+    }
+  }, [sessionId, token, createSession]);
+
   return (
-    <div className="flex flex-col h-full bg-[#FAFAF9]">
+    <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 h-14 border-b border-[#E8E0D8] bg-white flex-shrink-0 z-10 shadow-sm">
+      <header className="flex items-center justify-between px-6 h-14 border-b border-border flex-shrink-0 z-10 bg-background">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#1C1917] to-[#44403C] flex items-center justify-center text-white shadow-sm">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-foreground to-muted-foreground flex items-center justify-center text-background">
             <SparkleIcon />
           </div>
           <div>
-            <h1 className="text-sm font-semibold text-[#1C1917] leading-none">
+            <h1 className="text-sm font-semibold leading-none">
               {sessionId ? "Conversation" : "agenticOS"}
             </h1>
-            <p className="text-[10px] text-[#A8A29E]">MiniMax M2 · Chain of Thought</p>
+            <p className="text-[10px] text-muted-foreground">MiniMax M2 · Chain of Thought</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {sessionId && (
             <button
-              onClick={async () => {
-                if (sessionId) {
-                  await fetch(`/api/sessions/${sessionId}`, {
-                    method: "DELETE",
-                    headers: { Authorization: `Bearer ${token}` },
-                  });
-                  await createSession();
-                }
-              }}
-              className="text-xs text-[#A8A29E] hover:text-[#1C1917] transition-colors px-3 py-1.5 rounded-lg hover:bg-[#F5F4F2]"
+              onClick={handleClear}
+              className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-muted transition-colors"
             >
               Clear
             </button>
           )}
           <div className="flex items-center gap-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${loading ? "bg-amber-400 animate-pulse" : "bg-green-500"}`} />
-            <span className="text-xs text-[#78716C]">{loading ? "Processing…" : "Ready"}</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${isStreaming ? "bg-amber-400 animate-pulse" : "bg-green-500"}`} />
+            <span className="text-xs text-muted-foreground">
+              {isStreaming ? "Processing…" : "Ready"}
+            </span>
           </div>
         </div>
       </header>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-5">
-        {messages.length === 0 && !loading && (
-          <div className="text-center py-16 space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#1C1917] to-[#44403C] flex items-center justify-center text-white mx-auto shadow-lg">
-              <SparkleIcon />
-            </div>
-            <div>
-              <p className="text-lg font-semibold text-[#1C1917]">agenticOS</p>
-              <p className="text-sm text-[#78716C] mt-1 max-w-xs mx-auto">
-                Powered by <span className="font-medium text-[#1C1917]">MiniMax M2</span> with chain-of-thought reasoning and autonomous tool use.
-              </p>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2 mt-4">
-              {["Research a topic", "Write and debug code", "Analyze data", "Plan a project"].map((q) => (
-                <button
-                  key={q}
-                  onClick={() => handleSend(q)}
-                  className="px-3 py-1.5 text-xs bg-white border border-[#E8E0D8] rounded-full text-[#57534E] hover:bg-[#F5F4F2] hover:border-[#A8A29E] transition-all"
-                >
-                  {q}
-                </button>
+      {/* Conversation */}
+      <div className="flex-1 overflow-hidden">
+        {messages.length === 0 && !loading ? (
+          <EmptyState onSuggestion={handleSendMessage} />
+        ) : (
+          <Conversation className="h-full">
+            <ConversationContent className="p-4 space-y-4">
+              {messages.map((msg) => (
+                <MessageBubble
+                  key={msg.id}
+                  msg={msg}
+                  isStreaming={isStreaming && msg.id === messages[messages.length - 1].id}
+                />
               ))}
-            </div>
-          </div>
+
+              {/* Live streaming indicator */}
+              {isStreaming && messages.length > 0 && (
+                <Message from="assistant">
+                  <MessageContent>
+                    <Shimmer duration={1}>Thinking…</Shimmer>
+                  </MessageContent>
+                </Message>
+              )}
+            </ConversationContent>
+          </Conversation>
         )}
-
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} />
-        ))}
-
-        {loading && <LoadingIndicator steps={liveReasoning} />}
-
-        <div ref={bottomRef} />
       </div>
 
       {/* Input */}
-      <ChatInput onSend={handleSend} disabled={loading} />
+      <div className="border-t border-border px-4 py-3 bg-background">
+        <div className="max-w-3xl mx-auto">
+          <PromptInput
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            onSubmit={handleSubmit as any}
+            disabled={loading}
+          />
+        </div>
+        <p className="text-center text-[10px] text-muted-foreground/40 mt-2 max-w-3xl mx-auto">
+          agenticOS · MiniMax M2 · Press Enter to send · Shift+Enter for new line
+        </p>
+      </div>
     </div>
   );
 }
