@@ -11,16 +11,17 @@ datasource db {
 }
 
 // ──────────────────────────────────────────────
-// User
+// User — with auth
 // ──────────────────────────────────────────────
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String?
+  password  String?  // hashed with bcrypt
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sessions Session[]
+  sessions  Session[]
 }
 
 // ──────────────────────────────────────────────
@@ -40,21 +41,24 @@ model Session {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([userId, updatedAt])
 }
 
 // ──────────────────────────────────────────────
 // Message — a single turn in a session
 // ──────────────────────────────────────────────
 model Message {
-  id    String @id @default(cuid())
-  role  String  // "user" | "assistant" | "system" | "tool"
+  id   String @id @default(cuid())
+  role String // "user" | "assistant" | "system" | "tool"
 
   content         String   @db.Text
   reasoningSteps  Json     @default("[]")
   toolCalls       Json     @default("[]")
   citations       Json     @default("[]")
   usage           Json?
-  model           String?
+
+  model String?
+  agent String? // agent name used
 
   sessionId String
   session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)

@@ -1,5 +1,2 @@
-import ChatContainer from "@/components/chat/chat-container";
-
-export default function Home() {
-  return <ChatContainer />;
-}
+// Root page — delegates to (app) route group
+export { default } from "./(app)/page";
