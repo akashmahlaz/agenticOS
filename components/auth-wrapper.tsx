@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, createContext, useContext, ReactNode } from "react";
+import { ThemeProvider } from "@/components/theme-provider";
 
 interface User {
   id: string;
@@ -107,8 +108,10 @@ export default function AuthWrapper({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, signup, logout, refreshUser }}>
-      {children}
-    </AuthContext.Provider>
+    <ThemeProvider>
+      <AuthContext.Provider value={{ user, token, loading, login, signup, logout, refreshUser }}>
+        {children}
+      </AuthContext.Provider>
+    </ThemeProvider>
   );
 }

@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/app/(app)/layout";
 
 // ──────────────────────────────────────────────
@@ -13,7 +13,7 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
-import { Message, MessageContent } from "@/components/ai-elements/message";
+import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import {
   ChainOfThought,
   ChainOfThoughtHeader,
@@ -21,14 +21,32 @@ import {
   ChainOfThoughtContent,
   ChainOfThoughtSearchResults,
   ChainOfThoughtSearchResult,
-  ChainOfThoughtImage,
 } from "@/components/ai-elements/chain-of-thought";
 import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Sources, SourcesTrigger, SourcesContent } from "@/components/ai-elements/sources";
 import { PromptInput } from "@/components/ai-elements/prompt-input";
-import { Checkpoint, CheckpointIcon } from "@/components/ai-elements/checkpoint";
+import { Context, ContextContent, ContextTrigger } from "@/components/ai-elements/context";
+import { Plan, PlanHeader, PlanTitle, PlanDescription, PlanContent, PlanFooter, PlanTrigger } from "@/components/ai-elements/plan";
+import { Task, TaskTrigger, TaskContent, TaskItem, TaskItemFile, TaskItemText } from "@/components/ai-elements/task";
+import { Queue, QueueTrigger, QueueContent, QueueItem, QueueItemIndicator, QueueItemContent, QueueItemLabel, QueueSection, QueueSectionTrigger, QueueSectionContent, QueueList } from "@/components/ai-elements/queue";
+import { ModelSelector, ModelSelectorTrigger, ModelSelectorContent, ModelSelectorInput, ModelSelectorList, ModelSelectorEmpty, ModelSelectorGroup, ModelSelectorItem, ModelSelectorLogo, ModelSelectorName, ModelSelectorShortcut } from "@/components/ai-elements/model-selector";
+import { OpenInChat } from "@/components/ai-elements/open-in-chat";
+import { Image } from "@/components/ai-elements/image";
+import { InlineCitation, InlineCitationCard, InlineCitationCardBody, InlineCitationCardTrigger, InlineCitationCardItem, InlineCitationCardSource, InlineCitationCardTitle, InlineCitationCardDescription, InlineCitationText } from "@/components/ai-elements/inline-citation";
+import { CodeBlock, CodeBlockHeader, CodeBlockTitle, CodeBlockContent } from "@/components/ai-elements/code-block";
+import { Snippet } from "@/components/ai-elements/snippet";
+import { Confirmation, ConfirmationTrigger, ConfirmationContent, ConfirmationRequest, ConfirmationAccepted, ConfirmationRejected, ConfirmationActions, ConfirmationAction } from "@/components/ai-elements/confirmation";
+import { Checkpoint, CheckpointIcon, CheckpointTrigger } from "@/components/ai-elements/checkpoint";
+import { Attachments, Attachment, AttachmentsTrigger, AttachmentsContent } from "@/components/ai-elements/attachments";
+import { Artifact, ArtifactHeader, ArtifactTitle, ArtifactDescription, ArtifactContent, ArtifactActions } from "@/components/ai-elements/artifact";
+import { MicSelector, MicSelectorTrigger, MicSelectorContent, MicSelectorInput, MicSelectorList, MicSelectorEmpty, MicSelectorGroup, MicSelectorItem, MicSelectorLabel, MicSelectorSeparator, MicSelectorShortcut } from "@/components/ai-elements/mic-selector";
+import { VoiceSelector, VoiceSelectorTrigger, VoiceSelectorContent, VoiceSelectorInput, VoiceSelectorList, VoiceSelectorEmpty, VoiceSelectorGroup, VoiceSelectorItem, VoiceSelectorLabel, VoiceSelectorSeparator, VoiceSelectorShortcut } from "@/components/ai-elements/voice-selector";
+import { Persona, PersonaAvatar, PersonaName, PersonaDescription, PersonaAvatarFallback, PersonaAvatarImage } from "@/components/ai-elements/persona";
+import { AudioPlayer, AudioPlayerElement, AudioPlayerControl, AudioPlayerTime, AudioPlayerTimeDisplay, AudioPlayerDurationDisplay, AudioPlayerSeek, AudioPlayerVolume, AudioPlayerVolumeSlider, AudioPlayerPlaybackRate, AudioPlayerMute } from "@/components/ai-elements/audio-player";
+import { Transcription, TranscriptionSegment, TranscriptionWord, TranscriptionTimestamp, TranscriptionLine, TranscriptionEmpty } from "@/components/ai-elements/transcription";
+import { SpeechInput, SpeechInputForm, SpeechInputValue, SpeechInputSubmit, SpeechInputStart, SpeechInputStop, SpeechInputRecording, SpeechInputControls, SpeechInputControl, SpeechInputLabel, SpeechInputMuted, SpeechInputActive, SpeechInputPlaceholder, SpeechInputHint } from "@/components/ai-elements/speech-input";
 
 // Icons
 import {
@@ -41,7 +59,15 @@ import {
   CalculatorIcon,
   DatabaseIcon,
   SearchIcon,
-  ChevronDownIcon,
+  MenuIcon,
+  PlusIcon,
+  SendIcon,
+  MicIcon,
+  PaperclipIcon,
+  SparklesIcon,
+  ImageIcon,
+  CodeIcon,
+  StopCircleIcon,
 } from "lucide-react";
 
 // ──────────────────────────────────────────────
@@ -51,7 +77,7 @@ interface ReasoningStep {
   title: string;
   description?: string;
   status: "pending" | "active" | "complete";
-  icon?: string; // search | brain | tool | calc | fetch | database
+  icon?: string;
   searchResults?: string[];
 }
 
@@ -82,7 +108,7 @@ interface MessageData {
 }
 
 // ──────────────────────────────────────────────
-// Map step icon string to lucide icon
+// Helper: map step icon string to lucide icon
 // ──────────────────────────────────────────────
 function getStepIcon(iconName?: string) {
   switch (iconName) {
@@ -96,13 +122,15 @@ function getStepIcon(iconName?: string) {
       return GlobeIcon;
     case "database":
       return DatabaseIcon;
+    case "code":
+      return CodeIcon;
     default:
       return BrainIcon;
   }
 }
 
 // ──────────────────────────────────────────────
-// Chain of Thought block — proper AI Elements pattern
+// ChainOfThought block (proper AI Elements)
 // ──────────────────────────────────────────────
 function ChainOfThoughtBlock({ steps, isStreaming }: { steps: ReasoningStep[]; isStreaming: boolean }) {
   if (!steps.length) return null;
@@ -113,14 +141,14 @@ function ChainOfThoughtBlock({ steps, isStreaming }: { steps: ReasoningStep[]; i
     <ChainOfThought defaultOpen={isStreaming || done > 0}>
       <ChainOfThoughtHeader>
         <span className="inline-flex items-center gap-2">
-          <BrainIcon className="size-3.5 text-amber-500" />
+          <BrainIcon className="size-3.5 text-primary" />
           <span className="text-xs font-medium">Chain of Thought</span>
           <span className="text-[10px] text-muted-foreground/60">
             {done}/{steps.length}
           </span>
           {isStreaming && activeStep && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-amber-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            <span className="inline-flex items-center gap-1 text-[10px] text-primary">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               {activeStep.title.slice(0, 50)}
             </span>
           )}
@@ -163,7 +191,7 @@ function ChainOfThoughtBlock({ steps, isStreaming }: { steps: ReasoningStep[]; i
 }
 
 // ──────────────────────────────────────────────
-// Tool call renderer
+// ToolCallBlock
 // ──────────────────────────────────────────────
 function ToolCallBlock({ call }: { call: ToolCallPart }) {
   const getState = () => {
@@ -171,9 +199,7 @@ function ToolCallBlock({ call }: { call: ToolCallPart }) {
     if (call.result) return "output-available" as const;
     return "input-available" as const;
   };
-
   const isRunning = !call.result && !call.errorText;
-
   return (
     <Tool>
       <ToolHeader
@@ -202,7 +228,7 @@ function ToolCallBlock({ call }: { call: ToolCallPart }) {
 }
 
 // ──────────────────────────────────────────────
-// Source citations
+// SourcesBlock
 // ──────────────────────────────────────────────
 function SourcesBlock({ sources }: { sources?: SourceItem[] }) {
   if (!sources?.length) return null;
@@ -212,14 +238,14 @@ function SourcesBlock({ sources }: { sources?: SourceItem[] }) {
         <span className="text-[10px]">📚 {sources.length} source{sources.length > 1 ? "s" : ""}</span>
       </SourcesTrigger>
       <SourcesContent>
-        <ul className="space-y-1">
+        <ul className="space-y-1.5">
           {sources.map((s, i) => (
             <li key={i} className="text-xs">
               <a
                 href={s.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:underline"
+                className="text-primary hover:underline font-medium"
               >
                 {s.title || s.url}
               </a>
@@ -237,7 +263,7 @@ function SourcesBlock({ sources }: { sources?: SourceItem[] }) {
 }
 
 // ──────────────────────────────────────────────
-// Message bubble using AI Elements
+// MessageBubble — full markdown via MessageResponse
 // ──────────────────────────────────────────────
 function MessageBubble({ msg, isStreaming }: { msg: MessageData; isStreaming?: boolean }) {
   const isUser = msg.role === "user";
@@ -256,24 +282,73 @@ function MessageBubble({ msg, isStreaming }: { msg: MessageData; isStreaming?: b
           <SourcesBlock sources={msg.citations} />
         )}
 
-        <div className="text-sm leading-relaxed whitespace-pre-wrap">
-          {msg.content || (isStreaming ? <Shimmer duration={1}>Thinking…</Shimmer> : null)}
-        </div>
+        {msg.content ? (
+          isUser ? (
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+          ) : (
+            <MessageResponse className="prose-streamdown">
+              {msg.content}
+            </MessageResponse>
+          )
+        ) : isStreaming ? (
+          <Shimmer duration={1}>Thinking…</Shimmer>
+        ) : null}
       </MessageContent>
     </Message>
   );
 }
 
 // ──────────────────────────────────────────────
-// Prompt suggestions
+// Empty state — Gemini-style centered greeting
 // ──────────────────────────────────────────────
 const PROMPT_SUGGESTIONS = [
-  "Research a topic deeply",
-  "Write and debug code",
-  "Analyze data and trends",
-  "Plan a project",
-  "Explain a concept",
+  { icon: SearchIcon, text: "Research a topic", color: "text-teal" },
+  { icon: CodeIcon, text: "Write and debug code", color: "text-coral" },
+  { icon: BrainIcon, text: "Explain a concept", color: "text-primary" },
+  { icon: SparklesIcon, text: "Plan a project", color: "text-success" },
 ];
+
+function EmptyState({ onSuggestion, userName }: { onSuggestion: (text: string) => void; userName?: string }) {
+  return (
+    <ConversationEmptyState
+      icon={
+        <div className="relative">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal via-primary to-coral flex items-center justify-center text-white shadow-lg shadow-primary/20">
+            <SparklesIcon size={28} />
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-success flex items-center justify-center border-2 border-background">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        </div>
+      }
+      title={`What's next, ${userName || "there"}?`}
+      description="Powered by MiniMax M2 — chain-of-thought reasoning, autonomous tools, deep research."
+    >
+      <div className="pt-6 w-full max-w-md">
+        <div className="flex flex-wrap justify-center gap-1.5 mb-5">
+          {["Chain-of-thought", "Web search", "Deep research", "Voice", "Sessions"].map((f) => (
+            <span
+              key={f}
+              className="px-2 py-0.5 text-[10px] rounded-full bg-secondary border border-border text-muted-foreground"
+            >
+              ✓ {f}
+            </span>
+          ))}
+        </div>
+        <Suggestions>
+          {PROMPT_SUGGESTIONS.map((s) => (
+            <Suggestion key={s.text} suggestion={s.text} onClick={() => onSuggestion(s.text)}>
+              <s.icon className={`size-3 ${s.color}`} />
+              <span className="ml-1.5">{s.text}</span>
+            </Suggestion>
+          ))}
+        </Suggestions>
+      </div>
+    </ConversationEmptyState>
+  );
+}
 
 // ──────────────────────────────────────────────
 // Main Chat Container
@@ -281,307 +356,282 @@ const PROMPT_SUGGESTIONS = [
 interface ChatContainerProps {
   initialSessionId?: string | null;
   onSessionCreated?: (id: string) => void;
+  onMenuClick?: () => void;
 }
 
-export default function ChatContainer({ initialSessionId, onSessionCreated }: ChatContainerProps) {
-  const { token } = useAuth();
+export default function ChatContainer({ initialSessionId, onSessionCreated, onMenuClick }: ChatContainerProps) {
+  const { token, user } = useAuth();
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [liveSteps, setLiveSteps] = useState<ReasoningStep[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [model, setModel] = useState("MiniMax-M2");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Create a new session
   const createSession = useCallback(async (): Promise<string> => {
     const res = await fetch("/api/sessions", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ title: "New Chat" }),
     });
     const data = await res.json();
     setSessionId(data.id);
     onSessionCreated?.(data.id);
     setMessages([]);
-    setLiveSteps([]);
+    setRefreshKey((k) => k + 1);
     return data.id;
   }, [token, onSessionCreated]);
 
   // Load session messages
-  const loadSession = useCallback(async (id: string) => {
-    setLoading(true);
-    setSessionId(id);
-    setMessages([]);
-    setLiveSteps([]);
-    try {
-      const res = await fetch(`/api/sessions/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.messages) {
-        setMessages(
-          data.messages.map((m: Record<string, unknown>) => ({
-            ...m,
-            reasoningSteps: Array.isArray(m.reasoningSteps)
-              ? m.reasoningSteps
-              : JSON.parse(String(m.reasoningSteps || "[]")),
-            toolCalls: Array.isArray(m.toolCalls)
-              ? m.toolCalls
-              : JSON.parse(String(m.toolCalls || "[]")),
-            citations: Array.isArray(m.citations)
-              ? m.citations
-              : (m.citations ? JSON.parse(String(m.citations)) : []),
-          }))
-        );
+  const loadSession = useCallback(
+    async (id: string) => {
+      setLoading(true);
+      setSessionId(id);
+      setMessages([]);
+      try {
+        const res = await fetch(`/api/sessions/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.messages) {
+          setMessages(
+            data.messages.map((m: Record<string, unknown>) => ({
+              ...m,
+              reasoningSteps: Array.isArray(m.reasoningSteps)
+                ? m.reasoningSteps
+                : JSON.parse(String(m.reasoningSteps || "[]")),
+              toolCalls: Array.isArray(m.toolCalls)
+                ? m.toolCalls
+                : JSON.parse(String(m.toolCalls || "[]")),
+              citations: Array.isArray(m.citations)
+                ? m.citations
+                : m.citations ? JSON.parse(String(m.citations)) : [],
+            }))
+          );
+        }
+      } catch (err) {
+        console.error("Load session error:", err);
       }
-    } catch (err) {
-      console.error("Load session error:", err);
-    }
-    setLoading(false);
-  }, [token]);
+      setLoading(false);
+    },
+    [token]
+  );
 
   // Load initial session
   useEffect(() => {
-    if (initialSessionId) {
-      loadSession(initialSessionId);
-    } else {
+    if (initialSessionId) loadSession(initialSessionId);
+    else {
       setSessionId(null);
       setMessages([]);
-      setLiveSteps([]);
     }
   }, [initialSessionId, loadSession]);
 
-  // Auto-detect step type from text
+  // Listen to session refresh events
+  useEffect(() => {
+    const handler = () => setRefreshKey((k) => k + 1);
+    window.addEventListener("agenticos-refresh-sessions", handler);
+    return () => window.removeEventListener("agenticos-refresh-sessions", handler);
+  }, []);
+
+  // Detect step icon
   const detectStepIcon = (text: string): string => {
     const lower = text.toLowerCase();
     if (lower.includes("search") || lower.includes("look up") || lower.includes("find ")) return "search";
     if (lower.includes("calculat") || lower.includes("math") || lower.includes("compute")) return "calc";
     if (lower.includes("fetch") || lower.includes("read") || lower.includes("browse")) return "fetch";
     if (lower.includes("databas") || lower.includes("query") || lower.includes("sql")) return "database";
+    if (lower.includes("code") || lower.includes("function") || lower.includes("implement")) return "code";
     if (lower.includes("tool") || lower.includes("call") || lower.includes("execute")) return "tool";
     return "brain";
   };
 
-  // Send message with streaming
-  const handleSendMessage = useCallback(async (text: string) => {
-    let currentSessionId = sessionId;
-    if (!currentSessionId) {
-      currentSessionId = await createSession();
-    }
+  // Send message
+  const handleSendMessage = useCallback(
+    async (text: string) => {
+      let currentSessionId = sessionId;
+      if (!currentSessionId) currentSessionId = await createSession();
 
-    const userMsg: MessageData = {
-      id: `temp-${Date.now()}`,
-      role: "user",
-      content: text,
-      reasoningSteps: [],
-      toolCalls: [],
-      createdAt: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setLiveSteps([]);
-    setLoading(true);
-    setIsStreaming(true);
-
-    try {
-      // Save user message
-      await fetch("/api/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          sessionId: currentSessionId,
-          role: "user",
-          content: text,
-        }),
-      });
-
-      // Stream AI response
-      const chatRes = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          sessionId: currentSessionId,
-          messages: [...messages, { role: "user", content: text }],
-          model: "MiniMax-M2",
-        }),
-      });
-
-      if (!chatRes.ok) {
-        const err = await chatRes.json();
-        throw new Error(err.error || "Chat failed");
-      }
-
-      // Process streaming NDJSON
-      const reader = chatRes.body?.getReader();
-      if (!reader) throw new Error("No response stream");
-
-      let fullText = "";
-      let reasoningSteps: ReasoningStep[] = [];
-      let toolCalls: ToolCallPart[] = [];
-      let citations: SourceItem[] = [];
-      let reasoningBuffer = "";
-
-      const assistantMsg: MessageData = {
-        id: `ai-${Date.now()}`,
-        role: "assistant",
-        content: "",
+      const userMsg: MessageData = {
+        id: `temp-${Date.now()}`,
+        role: "user",
+        content: text,
         reasoningSteps: [],
         toolCalls: [],
-        citations: [],
-        model: "MiniMax-M2",
         createdAt: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, assistantMsg]);
+      setMessages((prev) => [...prev, userMsg]);
+      setLoading(true);
+      setIsStreaming(true);
 
-      const decoder = new TextDecoder();
-      let buffer = "";
+      try {
+        await fetch("/api/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ sessionId: currentSessionId, role: "user", content: text }),
+        });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        const chatRes = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            sessionId: currentSessionId,
+            messages: [...messages, { role: "user", content: text }],
+            model,
+          }),
+        });
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const data = JSON.parse(line);
-
-            if (data.type === "text-delta") {
-              fullText += data.delta;
-              setMessages((prev) => {
-                const updated = [...prev];
-                const last = updated[updated.length - 1];
-                updated[updated.length - 1] = { ...last, content: fullText };
-                return updated;
-              });
-            } else if (data.type === "reasoning") {
-              reasoningBuffer += data.text;
-              const lines = reasoningBuffer
-                .split(/\n+/)
-                .filter(Boolean)
-                .slice(-15);
-              reasoningSteps = lines.map((s, i, arr) => ({
-                title: s.trim().slice(0, 120),
-                status: i === arr.length - 1 ? "active" : "complete",
-                icon: detectStepIcon(s),
-              }));
-              setLiveSteps(reasoningSteps);
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { ...updated[updated.length - 1], reasoningSteps };
-                return updated;
-              });
-            } else if (data.type === "tool-call") {
-              const tc: ToolCallPart = {
-                name: data.toolName,
-                state: "input-available",
-                args: data.args,
-              };
-              toolCalls.push(tc);
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { ...updated[updated.length - 1], toolCalls: [...toolCalls] };
-                return updated;
-              });
-            } else if (data.type === "tool-result") {
-              toolCalls = toolCalls.map((t) =>
-                t.name === data.toolName
-                  ? {
-                      ...t,
-                      state: (data.errorText ? "output-error" : "output-available") as ToolCallPart["state"],
-                      result: data.result,
-                      errorText: data.errorText,
-                    }
-                  : t
-              );
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { ...updated[updated.length - 1], toolCalls: [...toolCalls] };
-                return updated;
-              });
-            } else if (data.type === "sources") {
-              citations = data.items || [];
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { ...updated[updated.length - 1], citations };
-                return updated;
-              });
-            } else if (data.type === "finish") {
-              setIsStreaming(false);
-            }
-          } catch {
-            // ignore parse errors
-          }
+        if (!chatRes.ok) {
+          const err = await chatRes.json();
+          throw new Error(err.error || "Chat failed");
         }
-      }
 
-      // Finalize
-      const cleanText = fullText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "").trim();
-      const finalSteps = reasoningSteps.map((s) => ({ ...s, status: "complete" as const }));
+        const reader = chatRes.body?.getReader();
+        if (!reader) throw new Error("No response stream");
 
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          content: cleanText,
-          reasoningSteps: finalSteps,
-          toolCalls,
-          citations,
-        };
-        return updated;
-      });
-      setLiveSteps([]);
+        let fullText = "";
+        let reasoningSteps: ReasoningStep[] = [];
+        let toolCalls: ToolCallPart[] = [];
+        let citations: SourceItem[] = [];
+        let reasoningBuffer = "";
 
-      // Save to DB
-      await fetch("/api/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          sessionId: currentSessionId,
+        const assistantMsg: MessageData = {
+          id: `ai-${Date.now()}`,
           role: "assistant",
-          content: cleanText,
-          reasoningSteps: finalSteps,
-          toolCalls,
-          citations,
-          model: "MiniMax-M2",
-        }),
-      });
-    } catch (err) {
-      console.error("Chat error:", err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `error-${Date.now()}`,
-          role: "assistant",
-          content: `Error: ${err instanceof Error ? err.message : "Something went wrong."}`,
+          content: "",
           reasoningSteps: [],
           toolCalls: [],
+          citations: [],
+          model,
           createdAt: new Date().toISOString(),
-        },
-      ]);
-    } finally {
-      setLoading(false);
-      setIsStreaming(false);
-    }
-  }, [sessionId, token, messages, createSession]);
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
 
-  // Handle form submit
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const data = JSON.parse(line);
+              if (data.type === "text-delta") {
+                fullText += data.delta;
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { ...updated[updated.length - 1], content: fullText };
+                  return updated;
+                });
+              } else if (data.type === "reasoning") {
+                reasoningBuffer += data.text;
+                const splitLines = reasoningBuffer.split(/\n+/).filter(Boolean).slice(-15);
+                reasoningSteps = splitLines.map((s, i, arr) => ({
+                  title: s.trim().slice(0, 120),
+                  status: i === arr.length - 1 ? "active" : "complete",
+                  icon: detectStepIcon(s),
+                }));
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { ...updated[updated.length - 1], reasoningSteps };
+                  return updated;
+                });
+              } else if (data.type === "tool-call") {
+                toolCalls.push({ name: data.toolName, state: "input-available", args: data.args });
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { ...updated[updated.length - 1], toolCalls: [...toolCalls] };
+                  return updated;
+                });
+              } else if (data.type === "tool-result") {
+                toolCalls = toolCalls.map((t) =>
+                  t.name === data.toolName
+                    ? {
+                        ...t,
+                        state: (data.errorText ? "output-error" : "output-available") as ToolCallPart["state"],
+                        result: data.result,
+                        errorText: data.errorText,
+                      }
+                    : t
+                );
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { ...updated[updated.length - 1], toolCalls: [...toolCalls] };
+                  return updated;
+                });
+              } else if (data.type === "sources") {
+                citations = data.items || [];
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { ...updated[updated.length - 1], citations };
+                  return updated;
+                });
+              } else if (data.type === "finish") {
+                setIsStreaming(false);
+              }
+            } catch {}
+          }
+        }
+
+        const cleanText = fullText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "").trim();
+        const finalSteps = reasoningSteps.map((s) => ({ ...s, status: "complete" as const }));
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            content: cleanText,
+            reasoningSteps: finalSteps,
+            toolCalls,
+            citations,
+          };
+          return updated;
+        });
+
+        await fetch("/api/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            sessionId: currentSessionId,
+            role: "assistant",
+            content: cleanText,
+            reasoningSteps: finalSteps,
+            toolCalls,
+            citations,
+            model,
+          }),
+        });
+
+        // Trigger sidebar refresh
+        window.dispatchEvent(new Event("agenticos-refresh-sessions"));
+      } catch (err) {
+        console.error("Chat error:", err);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            role: "assistant",
+            content: `Error: ${err instanceof Error ? err.message : "Something went wrong."}`,
+            reasoningSteps: [],
+            toolCalls: [],
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+      } finally {
+        setLoading(false);
+        setIsStreaming(false);
+      }
+    },
+    [sessionId, token, messages, model, createSession]
+  );
+
+  // Form submit
   const handleSubmit = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (message: any, event: any) => {
+    async (message: any) => {
       const text = message?.text?.trim();
       if (!text || loading) return;
       await handleSendMessage(text);
@@ -589,47 +639,52 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
     [loading, handleSendMessage]
   );
 
-  // Clear chat
-  const handleClear = useCallback(async () => {
-    if (sessionId) {
-      await fetch(`/api/sessions/${sessionId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      await createSession();
-    }
-  }, [sessionId, token, createSession]);
-
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 h-14 border-b border-border flex-shrink-0 z-10 bg-background">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-foreground to-muted-foreground flex items-center justify-center text-background">
-            <BrainIcon className="size-4" />
-          </div>
-          <div>
-            <h1 className="text-sm font-semibold leading-none">
-              {sessionId ? "Conversation" : "agenticOS"}
-            </h1>
-            <p className="text-[10px] text-muted-foreground">
-              MiniMax M2 · Chain of Thought
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {sessionId && (
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
+      {/* Top bar — Gemini-style */}
+      <header className="flex items-center justify-between px-3 md:px-5 h-12 border-b border-border flex-shrink-0 bg-background/95 backdrop-blur-md z-20">
+        <div className="flex items-center gap-2 min-w-0">
+          {onMenuClick && (
             <button
-              onClick={handleClear}
-              className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-muted transition-colors"
+              onClick={onMenuClick}
+              className="p-2 rounded-lg hover:bg-secondary text-foreground transition-colors"
+              aria-label="Open menu"
             >
-              Clear
+              <MenuIcon size={18} />
             </button>
           )}
-          <div className="flex items-center gap-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${isStreaming ? "bg-amber-400 animate-pulse" : "bg-green-500"}`} />
-            <span className="text-xs text-muted-foreground">
-              {isStreaming ? "Processing…" : "Ready"}
+          <ModelSelector>
+            <ModelSelectorTrigger asChild>
+              <button className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-secondary text-foreground text-sm font-medium transition-colors">
+                <span className="truncate">{model}</span>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="opacity-60 flex-shrink-0">
+                  <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </ModelSelectorTrigger>
+            <ModelSelectorContent>
+              <ModelSelectorInput placeholder="Search models..." />
+              <ModelSelectorList>
+                <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
+                <ModelSelectorGroup>
+                  <ModelSelectorItem value="MiniMax-M2" onSelect={() => setModel("MiniMax-M2")}>
+                    <ModelSelectorLogo>
+                      <SparklesIcon size={14} className="text-primary" />
+                    </ModelSelectorLogo>
+                    <ModelSelectorName>MiniMax M2</ModelSelectorName>
+                    <ModelSelectorShortcut>⌘M</ModelSelectorShortcut>
+                  </ModelSelectorItem>
+                </ModelSelectorGroup>
+              </ModelSelectorList>
+            </ModelSelectorContent>
+          </ModelSelector>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-secondary/50">
+            <span className={`w-1.5 h-1.5 rounded-full ${isStreaming ? "bg-amber-400 animate-pulse" : "bg-success"}`} />
+            <span className="text-[10px] text-muted-foreground hidden sm:inline">
+              {isStreaming ? "Processing" : "Ready"}
             </span>
           </div>
         </div>
@@ -638,45 +693,10 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
       {/* Conversation */}
       <div className="flex-1 overflow-hidden relative">
         {messages.length === 0 && !loading ? (
-          <ConversationEmptyState
-            icon={
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-foreground to-muted-foreground flex items-center justify-center text-background">
-                <BrainIcon className="size-5" />
-              </div>
-            }
-            title="agenticOS"
-            description="Powered by MiniMax M2 with chain-of-thought reasoning and autonomous tool use."
-          >
-            <div className="pt-4 w-full max-w-md">
-              <div className="flex flex-wrap justify-center gap-1.5 mb-4">
-                {[
-                  "Chain-of-thought reasoning",
-                  "Web search & calculations",
-                  "Deep research",
-                  "Tool execution",
-                  "Session history",
-                ].map((f) => (
-                  <span
-                    key={f}
-                    className="px-2 py-0.5 text-[10px] rounded-full bg-muted/60 border border-border text-muted-foreground"
-                  >
-                    ✓ {f}
-                  </span>
-                ))}
-              </div>
-              <Suggestions>
-                {PROMPT_SUGGESTIONS.map((s) => (
-                  <Suggestion key={s} suggestion={s} onClick={() => handleSendMessage(s)} />
-                ))}
-              </Suggestions>
-              <p className="text-[10px] text-muted-foreground/50 mt-4">
-                Press Enter to send · Shift+Enter for new line
-              </p>
-            </div>
-          </ConversationEmptyState>
+          <EmptyState onSuggestion={handleSendMessage} userName={user?.name?.split(" ")[0]} />
         ) : (
           <Conversation className="h-full">
-            <ConversationContent className="p-4 space-y-6 max-w-3xl mx-auto">
+            <ConversationContent className="p-3 md:p-5 space-y-5 max-w-3xl mx-auto w-full">
               {messages.map((msg) => (
                 <MessageBubble
                   key={msg.id}
@@ -684,7 +704,6 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
                   isStreaming={isStreaming && msg.id === messages[messages.length - 1].id}
                 />
               ))}
-
               {isStreaming && messages.length > 0 && (
                 <Message from="assistant">
                   <MessageContent>
@@ -698,8 +717,8 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
         )}
       </div>
 
-      {/* Input */}
-      <div className="border-t border-border px-4 py-3 bg-background">
+      {/* Floating input pill — Gemini style */}
+      <div className="px-3 md:px-5 pb-3 pt-1 flex-shrink-0 bg-gradient-to-t from-background via-background to-transparent">
         <div className="max-w-3xl mx-auto">
           <PromptInput
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -707,9 +726,6 @@ export default function ChatContainer({ initialSessionId, onSessionCreated }: Ch
             disabled={loading}
           />
         </div>
-        <p className="text-center text-[10px] text-muted-foreground/40 mt-2 max-w-3xl mx-auto">
-          agenticOS · MiniMax M2 · Press Enter to send · Shift+Enter for new line
-        </p>
       </div>
     </div>
   );
