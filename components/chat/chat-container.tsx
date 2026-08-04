@@ -10,7 +10,6 @@ import { useAuth } from "@/app/(app)/layout";
 import {
   Conversation,
   ConversationContent,
-  ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -23,10 +22,9 @@ import {
   ChainOfThoughtSearchResult,
 } from "@/components/ai-elements/chain-of-thought";
 import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
-import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Sources, SourcesTrigger, SourcesContent } from "@/components/ai-elements/sources";
-import { PromptInput, PromptInputBody, PromptInputTextarea, PromptInputFooter, PromptInputSubmit, PromptInputTools, PromptInputButton, PromptInputHeader, PromptInputActionMenu, PromptInputActionMenuTrigger, PromptInputActionMenuContent, PromptInputActionAddAttachments, type PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import { PromptInput, PromptInputBody, PromptInputTextarea, PromptInputFooter, PromptInputSubmit, PromptInputTools, PromptInputButton, PromptInputHeader, PromptInputActionMenu, PromptInputActionMenuTrigger, PromptInputActionMenuContent, PromptInputActionMenuItem, PromptInputActionAddAttachments, type PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Context, ContextContent, ContextTrigger } from "@/components/ai-elements/context";
 import { Plan, PlanHeader, PlanTitle, PlanDescription, PlanContent, PlanFooter, PlanTrigger } from "@/components/ai-elements/plan";
 import { Task, TaskTrigger, TaskContent, TaskItem, TaskItemFile, TaskItemText } from "@/components/ai-elements/task";
@@ -52,6 +50,7 @@ import { SpeechInput, SpeechInputForm, SpeechInputValue, SpeechInputSubmit, Spee
 import {
   BrainIcon,
   CheckCircleIcon,
+  CheckIcon,
   CircleIcon,
   ClockIcon,
   GlobeIcon,
@@ -299,7 +298,8 @@ function MessageBubble({ msg, isStreaming }: { msg: MessageData; isStreaming?: b
 }
 
 // ──────────────────────────────────────────────
-// Empty state — Gemini-style centered greeting
+// Empty state — Gemini Neural Expressive style
+// Minimal: animated logo + greeting + 4 suggestion chips
 // ──────────────────────────────────────────────
 const PROMPT_SUGGESTIONS = [
   { icon: SearchIcon, text: "Research a topic", color: "text-teal" },
@@ -310,43 +310,56 @@ const PROMPT_SUGGESTIONS = [
 
 function EmptyState({ onSuggestion, userName }: { onSuggestion: (text: string) => void; userName?: string }) {
   return (
-    <ConversationEmptyState
-      icon={
-        <div className="relative">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal via-primary to-coral flex items-center justify-center text-white shadow-lg shadow-primary/20">
-            <SparklesIcon size={28} />
-          </div>
-          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-success flex items-center justify-center border-2 border-background">
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
+    <div className="flex flex-col items-center justify-center h-full px-4 -mt-8">
+      {/* Animated gradient logo — Gemini-style */}
+      <div className="relative mb-6">
+        <div
+          className="w-16 h-16 rounded-3xl flex items-center justify-center shadow-2xl shadow-primary/20"
+          style={{
+            background:
+              "conic-gradient(from 180deg at 50% 50%, #4796E4 0deg, #847ACE 90deg, #C3677F 180deg, #4796E4 360deg)",
+          }}
+        >
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <path
+              d="M16 2L20 12L30 16L20 20L16 30L12 20L2 16L12 12L16 2Z"
+              fill="white"
+              opacity="0.95"
+            />
+          </svg>
         </div>
-      }
-      title={`What's next, ${userName || "there"}?`}
-      description="Powered by MiniMax M2 — chain-of-thought reasoning, autonomous tools, deep research."
-    >
-      <div className="pt-6 w-full max-w-md">
-        <div className="flex flex-wrap justify-center gap-1.5 mb-5">
-          {["Chain-of-thought", "Web search", "Deep research", "Voice", "Sessions"].map((f) => (
-            <span
-              key={f}
-              className="px-2 py-0.5 text-[10px] rounded-full bg-secondary border border-border text-muted-foreground"
-            >
-              ✓ {f}
-            </span>
-          ))}
-        </div>
-        <Suggestions>
-          {PROMPT_SUGGESTIONS.map((s) => (
-            <Suggestion key={s.text} suggestion={s.text} onClick={() => onSuggestion(s.text)}>
-              <s.icon className={`size-3 ${s.color}`} />
-              <span className="ml-1.5">{s.text}</span>
-            </Suggestion>
-          ))}
-        </Suggestions>
+        {/* Subtle glow */}
+        <div
+          className="absolute inset-0 rounded-3xl blur-2xl opacity-30 -z-10"
+          style={{
+            background:
+              "conic-gradient(from 180deg at 50% 50%, #4796E4 0deg, #847ACE 90deg, #C3677F 180deg)",
+          }}
+        />
       </div>
-    </ConversationEmptyState>
+
+      {/* Greeting */}
+      <h1 className="text-3xl md:text-4xl font-medium tracking-tight font-space-grotesk text-center mb-1">
+        Hi, {userName || "there"}.
+      </h1>
+      <p className="text-base md:text-lg text-muted-foreground/70 text-center font-light mb-10">
+        Where should we begin?
+      </p>
+
+      {/* Suggestion chips */}
+      <div className="flex flex-wrap justify-center gap-2 max-w-md w-full">
+        {PROMPT_SUGGESTIONS.map((s) => (
+          <button
+            key={s.text}
+            onClick={() => onSuggestion(s.text)}
+            className="group flex items-center gap-2 px-4 py-2.5 rounded-full border border-border/60 bg-card/60 backdrop-blur-sm hover:bg-card hover:border-foreground/20 transition-all text-sm"
+          >
+            <s.icon size={14} className={s.color} />
+            <span className="text-foreground/80 group-hover:text-foreground">{s.text}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -673,10 +686,10 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
           )}
           <ModelSelector open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
             <ModelSelectorTrigger asChild>
-              <button className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-secondary text-foreground text-sm font-medium transition-colors">
-                <SparklesIcon size={14} className="text-primary" />
-                <span className="truncate">{model}</span>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="opacity-60 flex-shrink-0">
+              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-muted text-foreground text-[15px] font-medium transition-colors">
+                <SparklesIcon size={15} className="text-teal" />
+                <span className="truncate">{model === "MiniMax-M2-Reasoning" ? "M2 Reasoning" : "agenticOS"}</span>
+                <svg width="11" height="11" viewBox="0 0 10 10" fill="none" className="opacity-50 flex-shrink-0">
                   <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               </button>
@@ -708,8 +721,8 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
         </div>
       </header>
 
-      {/* Conversation */}
-      <div className="flex-1 overflow-hidden relative">
+      {/* Conversation — scrollable only this area, input is fixed to viewport on mobile */}
+      <div className="flex-1 overflow-y-auto relative pb-32 md:pb-4">
         {messages.length === 0 && !loading ? (
           <EmptyState onSuggestion={handleSendMessage} userName={user?.name?.split(" ")[0]} />
         ) : (
@@ -735,16 +748,18 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
         )}
       </div>
 
-      {/* Floating input pill — Gemini style with proper AI Elements PromptInput */}
+      {/* Gemini-style floating input pill — fixed to viewport bottom on mobile, normal flex on desktop */}
       <div
-        className="px-3 md:px-5 flex-shrink-0 bg-gradient-to-t from-background via-background to-transparent"
-        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        className="fixed md:relative bottom-0 left-0 right-0 md:bottom-auto md:left-auto md:right-auto z-30 px-3 md:px-5 flex-shrink-0"
+        style={{ paddingBottom: "max(0.6rem, env(safe-area-inset-bottom))" }}
       >
-        <div className="max-w-3xl mx-auto pb-3 pt-1">
+        <div className="max-w-3xl mx-auto">
+          {/* Subtle gradient fade above the input for separation */}
+          <div className="h-4 -mt-4 bg-gradient-to-t from-background to-transparent pointer-events-none" />
           <PromptInput
             onSubmit={handleSubmit as (m: PromptInputMessage) => void}
             disabled={loading}
-            className="border border-border bg-card rounded-3xl shadow-lg shadow-black/5"
+            className="relative border border-border/60 bg-card/95 backdrop-blur-xl shadow-[0_2px_24px_-8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_24px_-8px_rgba(0,0,0,0.5)] rounded-[28px] focus-within:border-foreground/20 focus-within:shadow-[0_4px_28px_-8px_rgba(0,0,0,0.18)] dark:focus-within:shadow-[0_4px_28px_-8px_rgba(0,0,0,0.6)] transition-all"
           >
             <PromptInputHeader />
             <PromptInputBody>
@@ -753,69 +768,79 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
                 onChange={handleTextChange}
                 placeholder="Ask anything…"
                 disabled={loading}
-                className="min-h-12 max-h-48 text-sm"
+                className="min-h-12 max-h-40 text-[15px] leading-relaxed placeholder:text-muted-foreground/60 resize-none border-0 bg-transparent px-4 py-3"
+                rows={1}
               />
             </PromptInputBody>
-            <PromptInputFooter>
-              <PromptInputTools>
+            <PromptInputFooter className="px-2 pb-2 pt-0">
+              <PromptInputTools className="gap-0.5">
+                {/* Single + menu groups everything */}
                 <PromptInputActionMenu>
-                  <PromptInputActionMenuTrigger />
-                  <PromptInputActionMenuContent>
+                  <PromptInputActionMenuTrigger className="h-9 w-9 rounded-full hover:bg-muted text-foreground/80 hover:text-foreground" />
+                  <PromptInputActionMenuContent
+                    align="start"
+                    side="top"
+                    className="w-56"
+                  >
+                    <PromptInputActionMenuItem
+                      onClick={() => setUseWebSearch((v) => !v)}
+                    >
+                      <GlobeIcon size={14} className="mr-2" />
+                      {useWebSearch ? "✓ Web search" : "Web search"}
+                    </PromptInputActionMenuItem>
                     <PromptInputActionAddAttachments />
+                    <div className="border-t border-border my-1" />
+                    <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">
+                      Model
+                    </div>
+                    <PromptInputActionMenuItem
+                      onClick={() => setModel("MiniMax-M2")}
+                    >
+                      <SparklesIcon size={14} className="mr-2 text-teal" />
+                      MiniMax M2
+                      {model === "MiniMax-M2" && (
+                        <CheckIcon size={12} className="ml-auto text-teal" />
+                      )}
+                    </PromptInputActionMenuItem>
+                    <PromptInputActionMenuItem
+                      onClick={() => setModel("MiniMax-M2-Reasoning")}
+                    >
+                      <BrainIcon size={14} className="mr-2 text-coral" />
+                      MiniMax M2 Reasoning
+                      {model === "MiniMax-M2-Reasoning" && (
+                        <CheckIcon size={12} className="ml-auto text-coral" />
+                      )}
+                    </PromptInputActionMenuItem>
                   </PromptInputActionMenuContent>
                 </PromptInputActionMenu>
-                <PromptInputButton
-                  onClick={() => setUseWebSearch((v) => !v)}
-                  variant={useWebSearch ? "default" : "ghost"}
-                  className="text-xs"
-                >
-                  <GlobeIcon size={14} />
-                  <span>Search</span>
-                </PromptInputButton>
-                <ModelSelector
-                  open={modelSelectorOpen}
-                  onOpenChange={setModelSelectorOpen}
-                >
-                  <ModelSelectorTrigger asChild>
-                    <PromptInputButton variant="ghost" className="text-xs">
-                      <SparklesIcon size={14} className="text-primary" />
-                      <span className="truncate max-w-20">{model}</span>
-                    </PromptInputButton>
-                  </ModelSelectorTrigger>
-                  <ModelSelectorContent>
-                    <ModelSelectorInput placeholder="Search models..." />
-                    <ModelSelectorList>
-                      <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
-                      <ModelSelectorGroup heading="Available">
-                        <ModelSelectorItem
-                          value="MiniMax-M2"
-                          onSelect={() => {
-                            setModel("MiniMax-M2");
-                            setModelSelectorOpen(false);
-                          }}
-                        >
-                          <ModelSelectorName>MiniMax M2</ModelSelectorName>
-                        </ModelSelectorItem>
-                        <ModelSelectorItem
-                          value="MiniMax-M2-Reasoning"
-                          onSelect={() => {
-                            setModel("MiniMax-M2-Reasoning");
-                            setModelSelectorOpen(false);
-                          }}
-                        >
-                          <ModelSelectorName>MiniMax M2 Reasoning</ModelSelectorName>
-                        </ModelSelectorItem>
-                      </ModelSelectorGroup>
-                    </ModelSelectorList>
-                  </ModelSelectorContent>
-                </ModelSelector>
+
+                {useWebSearch && (
+                  <span className="h-7 px-2.5 rounded-full bg-teal/10 border border-teal/20 text-[10px] font-medium text-teal flex items-center gap-1 ml-0.5">
+                    <GlobeIcon size={11} />
+                    Search
+                    <button
+                      onClick={() => setUseWebSearch(false)}
+                      className="ml-1 hover:text-teal/70"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
               </PromptInputTools>
+
+              {/* Big prominent send button like Gemini/ChatGPT */}
               <PromptInputSubmit
                 disabled={!inputText.trim() || loading}
                 status={loading ? "streaming" : "ready"}
+                className="h-10 w-10 rounded-full bg-foreground text-background hover:bg-foreground/90 disabled:bg-muted disabled:text-muted-foreground shadow-sm transition-all"
               />
             </PromptInputFooter>
           </PromptInput>
+
+          {/* Disclaimer — subtle, Gemini-style */}
+          <p className="text-center text-[10px] text-muted-foreground/60 mt-2 px-2">
+            agenticOS can make mistakes. Verify important info.
+          </p>
         </div>
       </div>
     </div>
