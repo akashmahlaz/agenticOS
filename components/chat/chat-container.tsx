@@ -26,7 +26,7 @@ import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/componen
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Sources, SourcesTrigger, SourcesContent } from "@/components/ai-elements/sources";
-import { PromptInput } from "@/components/ai-elements/prompt-input";
+import { PromptInput, PromptInputBody, PromptInputTextarea, PromptInputFooter, PromptInputSubmit, PromptInputTools, PromptInputButton, PromptInputHeader, PromptInputActionMenu, PromptInputActionMenuTrigger, PromptInputActionMenuContent, PromptInputActionAddAttachments, type PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Context, ContextContent, ContextTrigger } from "@/components/ai-elements/context";
 import { Plan, PlanHeader, PlanTitle, PlanDescription, PlanContent, PlanFooter, PlanTrigger } from "@/components/ai-elements/plan";
 import { Task, TaskTrigger, TaskContent, TaskItem, TaskItemFile, TaskItemText } from "@/components/ai-elements/task";
@@ -367,6 +367,16 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
   const [isStreaming, setIsStreaming] = useState(false);
   const [model, setModel] = useState("MiniMax-M2");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [inputText, setInputText] = useState("");
+  const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+  const [useWebSearch, setUseWebSearch] = useState(false);
+
+  const handleTextChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setInputText(e.target.value);
+    },
+    []
+  );
 
   // Create a new session
   const createSession = useCallback(async (): Promise<string> => {
@@ -630,14 +640,22 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
 
   // Form submit
   const handleSubmit = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (message: any) => {
-      const text = message?.text?.trim();
+    async (message: { text: string; files?: unknown[] }) => {
+      const text = (message?.text || inputText).trim();
       if (!text || loading) return;
+      setInputText("");
       await handleSendMessage(text);
     },
-    [loading, handleSendMessage]
+    [loading, handleSendMessage, inputText]
   );
+
+  // Simple send from mobile button (uses inputText state directly)
+  const handleQuickSend = useCallback(async () => {
+    const text = inputText.trim();
+    if (!text || loading) return;
+    setInputText("");
+    await handleSendMessage(text);
+  }, [inputText, loading, handleSendMessage]);
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
@@ -653,9 +671,10 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
               <MenuIcon size={18} />
             </button>
           )}
-          <ModelSelector>
+          <ModelSelector open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
             <ModelSelectorTrigger asChild>
               <button className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-secondary text-foreground text-sm font-medium transition-colors">
+                <SparklesIcon size={14} className="text-primary" />
                 <span className="truncate">{model}</span>
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="opacity-60 flex-shrink-0">
                   <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -666,13 +685,12 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
               <ModelSelectorInput placeholder="Search models..." />
               <ModelSelectorList>
                 <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
-                <ModelSelectorGroup>
-                  <ModelSelectorItem value="MiniMax-M2" onSelect={() => setModel("MiniMax-M2")}>
-                    <ModelSelectorLogo>
-                      <SparklesIcon size={14} className="text-primary" />
-                    </ModelSelectorLogo>
+                <ModelSelectorGroup heading="Available">
+                  <ModelSelectorItem value="MiniMax-M2" onSelect={() => { setModel("MiniMax-M2"); setModelSelectorOpen(false); }}>
                     <ModelSelectorName>MiniMax M2</ModelSelectorName>
-                    <ModelSelectorShortcut>⌘M</ModelSelectorShortcut>
+                  </ModelSelectorItem>
+                  <ModelSelectorItem value="MiniMax-M2-Reasoning" onSelect={() => { setModel("MiniMax-M2-Reasoning"); setModelSelectorOpen(false); }}>
+                    <ModelSelectorName>MiniMax M2 Reasoning</ModelSelectorName>
                   </ModelSelectorItem>
                 </ModelSelectorGroup>
               </ModelSelectorList>
@@ -717,14 +735,87 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
         )}
       </div>
 
-      {/* Floating input pill — Gemini style */}
-      <div className="px-3 md:px-5 pb-3 pt-1 flex-shrink-0 bg-gradient-to-t from-background via-background to-transparent">
-        <div className="max-w-3xl mx-auto">
+      {/* Floating input pill — Gemini style with proper AI Elements PromptInput */}
+      <div
+        className="px-3 md:px-5 flex-shrink-0 bg-gradient-to-t from-background via-background to-transparent"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        <div className="max-w-3xl mx-auto pb-3 pt-1">
           <PromptInput
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            onSubmit={handleSubmit as any}
+            onSubmit={handleSubmit as (m: PromptInputMessage) => void}
             disabled={loading}
-          />
+            className="border border-border bg-card rounded-3xl shadow-lg shadow-black/5"
+          >
+            <PromptInputHeader />
+            <PromptInputBody>
+              <PromptInputTextarea
+                value={inputText}
+                onChange={handleTextChange}
+                placeholder="Ask anything…"
+                disabled={loading}
+                className="min-h-12 max-h-48 text-sm"
+              />
+            </PromptInputBody>
+            <PromptInputFooter>
+              <PromptInputTools>
+                <PromptInputActionMenu>
+                  <PromptInputActionMenuTrigger />
+                  <PromptInputActionMenuContent>
+                    <PromptInputActionAddAttachments />
+                  </PromptInputActionMenuContent>
+                </PromptInputActionMenu>
+                <PromptInputButton
+                  onClick={() => setUseWebSearch((v) => !v)}
+                  variant={useWebSearch ? "default" : "ghost"}
+                  className="text-xs"
+                >
+                  <GlobeIcon size={14} />
+                  <span>Search</span>
+                </PromptInputButton>
+                <ModelSelector
+                  open={modelSelectorOpen}
+                  onOpenChange={setModelSelectorOpen}
+                >
+                  <ModelSelectorTrigger asChild>
+                    <PromptInputButton variant="ghost" className="text-xs">
+                      <SparklesIcon size={14} className="text-primary" />
+                      <span className="truncate max-w-20">{model}</span>
+                    </PromptInputButton>
+                  </ModelSelectorTrigger>
+                  <ModelSelectorContent>
+                    <ModelSelectorInput placeholder="Search models..." />
+                    <ModelSelectorList>
+                      <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
+                      <ModelSelectorGroup heading="Available">
+                        <ModelSelectorItem
+                          value="MiniMax-M2"
+                          onSelect={() => {
+                            setModel("MiniMax-M2");
+                            setModelSelectorOpen(false);
+                          }}
+                        >
+                          <ModelSelectorName>MiniMax M2</ModelSelectorName>
+                        </ModelSelectorItem>
+                        <ModelSelectorItem
+                          value="MiniMax-M2-Reasoning"
+                          onSelect={() => {
+                            setModel("MiniMax-M2-Reasoning");
+                            setModelSelectorOpen(false);
+                          }}
+                        >
+                          <ModelSelectorName>MiniMax M2 Reasoning</ModelSelectorName>
+                        </ModelSelectorItem>
+                      </ModelSelectorGroup>
+                    </ModelSelectorList>
+                  </ModelSelectorContent>
+                </ModelSelector>
+              </PromptInputTools>
+              <PromptInputSubmit
+                disabled={!inputText.trim() || loading}
+                status={loading ? "streaming" : "ready"}
+              />
+            </PromptInputFooter>
+          </PromptInput>
         </div>
       </div>
     </div>
