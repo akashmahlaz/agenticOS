@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/app/(app)/layout";
 import { useTheme } from "@/components/theme-provider";
+import ModeSwitcher from "@/components/chat/mode-switcher";
 
 // ──────────────────────────────────────────────
 // Icons
@@ -472,6 +473,9 @@ export default function Sidebar({
           </button>
         )}
       </div>
+
+      {/* Mode switcher */}
+      <ModeSwitcher />
 
       {/* Session list */}
       <SessionList
