@@ -456,7 +456,6 @@ interface ChatContainerProps {
   isTempMode?: boolean;
   onExitTemp?: () => void;
   onStartTemp?: () => void;
-  refreshKey?: number;
 }
 
 export default function ChatContainer({
@@ -466,7 +465,6 @@ export default function ChatContainer({
   isTempMode,
   onExitTemp,
   onStartTemp,
-  refreshKey: externalRefreshKey,
 }: ChatContainerProps) {
   const { token, user } = useAuth();
   const [messages, setMessages] = useState<MessageData[]>([]);
@@ -480,7 +478,8 @@ export default function ChatContainer({
   // Track which session we last loaded from DB (so we don't reload on every
   // prop ping)
   const lastLoadedSessionRef = useRef<string | null | undefined>(undefined);
-  const [refreshKey, setRefreshKey] = useState(0);
+  // AbortController for the in-flight stream (so we can cancel on session switch)
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [inputText, setInputText] = useState("");
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [useWebSearch, setUseWebSearch] = useState(false);
@@ -520,7 +519,8 @@ export default function ChatContainer({
     lastLoadedSessionRef.current = data.id;
     setSessionId(data.id);
     onSessionCreated?.(data.id);
-    setRefreshKey((k) => k + 1);
+    // Tell the sidebar to reload its session list
+    window.dispatchEvent(new Event("agenticos-refresh-sessions"));
     return data.id;
   }, [token, onSessionCreated, isTemporary]);
 
@@ -585,8 +585,15 @@ export default function ChatContainer({
     if (!initialSessionId) {
       // Only clear if we were showing a different session
       if (lastLoadedSessionRef.current !== null) {
+        // Cancel any in-flight stream
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
         lastLoadedSessionRef.current = null;
         justCreatedSessionRef.current = null;
+        setIsStreaming(false);
+        setLoading(false);
         setSessionId(null);
         setMessages([]);
       }
@@ -609,27 +616,6 @@ export default function ChatContainer({
     lastLoadedSessionRef.current = initialSessionId;
     loadSession(initialSessionId);
   }, [initialSessionId, loadSession]);
-
-  // External refresh (e.g. New Chat clicked in sidebar) — full reset
-  useEffect(() => {
-    if (externalRefreshKey === undefined) return;
-    // Bump the local refresh trigger to make sure sidebar reloads
-    setRefreshKey(externalRefreshKey);
-    // Invalidate the lastLoadedSession so the load effect re-evaluates
-    if (initialSessionId === null || initialSessionId === undefined) {
-      lastLoadedSessionRef.current = null;
-      justCreatedSessionRef.current = null;
-      setSessionId(null);
-      setMessages([]);
-    }
-  }, [externalRefreshKey, initialSessionId]);
-
-  // Listen to session refresh events
-  useEffect(() => {
-    const handler = () => setRefreshKey((k) => k + 1);
-    window.addEventListener("agenticos-refresh-sessions", handler);
-    return () => window.removeEventListener("agenticos-refresh-sessions", handler);
-  }, []);
 
   // Detect step icon
   const detectStepIcon = (text: string): string => {
@@ -668,6 +654,14 @@ export default function ChatContainer({
           body: JSON.stringify({ sessionId: currentSessionId, role: "user", content: text }),
         });
 
+        // Set up AbortController so this stream can be cancelled
+        // (e.g. when user navigates to a different session)
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
+
         const chatRes = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -676,6 +670,7 @@ export default function ChatContainer({
             messages: [...messages, { role: "user", content: text }],
             model,
           }),
+          signal: abortController.signal,
         });
 
         if (!chatRes.ok) {
@@ -709,6 +704,11 @@ export default function ChatContainer({
         let buffer = "";
 
         while (true) {
+          // Bail out if the stream was cancelled (user navigated away)
+          if (abortController.signal.aborted) {
+            try { reader.cancel(); } catch {}
+            return;
+          }
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
@@ -843,6 +843,10 @@ export default function ChatContainer({
           },
         ]);
       } finally {
+        // Clear the abort controller if it's still pointing to the one we created
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+        }
         setLoading(false);
         setIsStreaming(false);
       }

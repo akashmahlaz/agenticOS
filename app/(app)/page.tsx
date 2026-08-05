@@ -1,30 +1,57 @@
 "use client";
 
-import { useState, useCallback, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+// AppPage — no URL-based chat navigation.
+// All chat state (active session, temp mode) lives in component state +
+// localStorage. The URL stays at "/" always. This eliminates the race
+// conditions that caused the first-message-of-new-chat bug.
+
+import { useState, useCallback, useEffect } from "react";
 import Sidebar from "@/components/chat/sidebar";
 import ChatContainer from "@/components/chat/chat-container";
 import AuthGate from "@/components/auth-gate";
 
-function AppPageInner() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const urlId = searchParams.get("id") || undefined;
-  const isTempFromUrl = searchParams.get("temporary-chat") === "true";
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(
-    isTempFromUrl ? null : urlId || null
-  );
-  const [refreshKey, setRefreshKey] = useState(0);
+const LS_ACTIVE_SESSION = "agenticos-active-session";
+const LS_TEMP_MODE = "agenticos-temp-mode";
+
+export default function AppPage() {
+  // Chat state — local only, no URL sync
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [isTempMode, setIsTempMode] = useState(false);
+  // Bump this to force the sidebar to reload its session list
+  const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
+
+  // UI state
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Sync URL -> state (NO remount — handled by ChatContainer's internal effect)
+  // Hydrate from localStorage on mount
   useEffect(() => {
-    const target = isTempFromUrl ? null : urlId || null;
-    if (target !== activeSessionId) {
-      setActiveSessionId(target);
+    try {
+      const saved = localStorage.getItem(LS_ACTIVE_SESSION);
+      if (saved) setActiveSessionId(saved);
+      const temp = localStorage.getItem(LS_TEMP_MODE);
+      if (temp === "true") setIsTempMode(true);
+    } catch {
+      // localStorage unavailable (private mode etc.) — just use defaults
     }
-  }, [urlId, isTempFromUrl, activeSessionId]);
+  }, []);
+
+  // Persist to localStorage
+  useEffect(() => {
+    try {
+      if (activeSessionId) {
+        localStorage.setItem(LS_ACTIVE_SESSION, activeSessionId);
+      } else {
+        localStorage.removeItem(LS_ACTIVE_SESSION);
+      }
+    } catch {}
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_TEMP_MODE, String(isTempMode));
+    } catch {}
+  }, [isTempMode]);
 
   // Detect mobile
   useEffect(() => {
@@ -46,51 +73,46 @@ function AppPageInner() {
     };
   }, [drawerOpen, isMobile]);
 
+  // Listen for sidebar refresh events (fired by ChatContainer after a new
+  // session or message)
+  useEffect(() => {
+    const handler = () => setSidebarRefreshKey((k) => k + 1);
+    window.addEventListener("agenticos-refresh-sessions", handler);
+    return () => window.removeEventListener("agenticos-refresh-sessions", handler);
+  }, []);
+
+  // ──────────────────────────────────────────────
+  // Handlers — all in-state, no URL changes
+  // ──────────────────────────────────────────────
+
   const handleNewChat = useCallback(() => {
     setActiveSessionId(null);
-    setRefreshKey((k) => k + 1);
+    setIsTempMode(false);
     setDrawerOpen(false);
-    router.push("/");
-  }, [router]);
+  }, []);
 
-  const handleSelectSession = useCallback(
-    (id: string) => {
-      setActiveSessionId(id);
-      setRefreshKey((k) => k + 1);
-      setDrawerOpen(false);
-      router.push(`/?id=${id}`);
-    },
-    [router]
-  );
+  const handleSelectSession = useCallback((id: string) => {
+    setActiveSessionId(id);
+    setIsTempMode(false);
+    setDrawerOpen(false);
+  }, []);
 
-  // Session creation — only update URL, do NOT remount or refresh.
-  // The ChatContainer manages its own state and will keep the streaming
-  // response intact while updating the URL in the background.
-  const handleSessionCreated = useCallback(
-    (id: string) => {
-      setActiveSessionId(id);
-      if (isTempFromUrl) {
-        router.replace(`/?temporary-chat=true`);
-      } else {
-        router.replace(`/?id=${id}`);
-      }
-    },
-    [router, isTempFromUrl]
-  );
+  const handleSessionCreated = useCallback((id: string) => {
+    // No URL update, no remount. Just set state.
+    setActiveSessionId(id);
+  }, []);
 
   const handleStartTemp = useCallback(() => {
     setActiveSessionId(null);
-    setRefreshKey((k) => k + 1);
+    setIsTempMode(true);
     setDrawerOpen(false);
-    router.push("/?temporary-chat=true");
-  }, [router]);
+  }, []);
 
   const handleExitTemp = useCallback(() => {
     setActiveSessionId(null);
-    setRefreshKey((k) => k + 1);
+    setIsTempMode(false);
     setDrawerOpen(false);
-    router.push("/");
-  }, [router]);
+  }, []);
 
   return (
     <AuthGate>
@@ -102,8 +124,8 @@ function AppPageInner() {
             onSelectSession={handleSelectSession}
             onNewChat={handleNewChat}
             onStartTemp={handleStartTemp}
-            isTempMode={isTempFromUrl}
-            refreshKey={refreshKey}
+            isTempMode={isTempMode}
+            refreshKey={sidebarRefreshKey}
           />
         </div>
 
@@ -127,36 +149,23 @@ function AppPageInner() {
             onNewChat={handleNewChat}
             onStartTemp={handleStartTemp}
             onClose={() => setDrawerOpen(false)}
-            isTempMode={isTempFromUrl}
-            refreshKey={refreshKey}
+            isTempMode={isTempMode}
+            refreshKey={sidebarRefreshKey}
           />
         </div>
 
-        {/* Main content — no key remount, ChatContainer handles session state internally */}
+        {/* Main content */}
         <div className="flex-1 flex flex-col min-w-0">
           <ChatContainer
             initialSessionId={activeSessionId}
             onSessionCreated={handleSessionCreated}
             onMenuClick={() => setDrawerOpen(true)}
-            isTempMode={isTempFromUrl}
+            isTempMode={isTempMode}
             onExitTemp={handleExitTemp}
             onStartTemp={handleStartTemp}
-            refreshKey={refreshKey}
           />
         </div>
       </div>
     </AuthGate>
-  );
-}
-
-export default function AppPage() {
-  return (
-    <Suspense fallback={
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="text-sm text-muted-foreground">Loading…</div>
-      </div>
-    }>
-      <AppPageInner />
-    </Suspense>
   );
 }
