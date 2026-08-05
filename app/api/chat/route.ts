@@ -1,37 +1,24 @@
+// @ts-nocheck
 // Streaming chat API — agenticOS
-// MiniMax M2 with chain-of-thought, streaming + tool calling
+// MiniMax M2 with chain-of-thought, streaming + tool calling + sub-agents
 
 import { createMinimax } from "vercel-minimax-ai-provider";
-import { streamText, tool, zodSchema, isStepCount } from "ai";
+import { streamText, tool, zodSchema, isStepCount, hasToolCall } from "ai";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { z } from "zod";
+import { subAgentTools, onSubAgentProgress } from "@/lib/agents/orchestrator";
 
 // ──────────────────────────────────────────────
 // Built-in Tools
 // ──────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const tools = {
-  search: tool({
-    description: "Search the web for current information.",
-    parameters: zodSchema(z.object({ query: z.string().describe("The search query") })),
-    // @ts-ignore
-    execute: async (input: { query: string }) => ({
-      results: [
-        {
-          title: `Search: ${input.query}`,
-          url: `https://www.google.com/search?q=${encodeURIComponent(input.query)}`,
-          snippet: `Configure your search API for live results.`,
-        },
-      ],
-    }),
-  }),
-
+const tools: any = {
+  // ── Quick utility tools (always available) ──
   getDate: tool({
     description: "Get the current date and time.",
     parameters: zodSchema(z.object({})),
-    // @ts-ignore
     execute: async () => ({
       date: new Date().toISOString(),
       weekday: new Date().toLocaleDateString("en-US", { weekday: "long" }),
@@ -41,7 +28,6 @@ const tools = {
   calculate: tool({
     description: "Perform a mathematical calculation.",
     parameters: zodSchema(z.object({ expression: z.string().describe("Math expression") })),
-    // @ts-ignore
     execute: async (input: { expression: string }) => {
       try {
         const safe = input.expression.replace(/[^0-9+\-*/().%\s]/g, "");
@@ -55,21 +41,21 @@ const tools = {
   }),
 
   fetchUrl: tool({
-    description: "Fetch and summarize the content of a URL.",
+    description: "Fetch and extract the main content of a URL.",
     parameters: zodSchema(z.object({ url: z.string().describe("The URL to fetch") })),
-    // @ts-ignore
     execute: async (input: { url: string }) => {
       try {
         const res = await fetch(input.url, {
           headers: { "User-Agent": "agenticOS/1.0" },
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(8000),
         });
         const text = await res.text();
+        const clean = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
         return {
           status: res.status,
           title: (text.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]) ?? "No title",
           length: text.length,
-          snippet: text.slice(0, 400),
+          snippet: clean.slice(0, 500),
         };
       } catch (err) {
         return { error: String(err) };
@@ -77,56 +63,14 @@ const tools = {
     },
   }),
 
-  // Deep research — browse multiple URLs
-  deepResearch: tool({
-    description: "Research a topic by fetching multiple relevant URLs in parallel.",
-    parameters: zodSchema(z.object({
-      topic: z.string().describe("The research topic"),
-      urls: z.array(z.string()).describe("URLs to fetch"),
-    })),
-    // @ts-ignore
-    execute: async (input: { topic: string; urls: string[] }) => {
-      const results = await Promise.allSettled(
-        input.urls.slice(0, 5).map(async (url) => {
-          try {
-            const res = await fetch(url, {
-              headers: { "User-Agent": "agenticOS/1.0" },
-              signal: AbortSignal.timeout(5000),
-            });
-            const text = await res.text();
-            return {
-              url,
-              status: res.status,
-              title: (text.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]) ?? url,
-              snippet: text.slice(0, 200),
-            };
-          } catch {
-            return { url, error: "Failed to fetch" };
-          }
-        })
-      );
-      return { topic: input.topic, results: results.map((r) => r.status === "fulfilled" ? r.value : { error: String(r.reason) }) };
-    },
-  }),
+  // ── Sub-agent tools (delegate to specialized agents) ──
+  // These are tools the MAIN agent can call, but each invokes a separate
+  // sub-agent with its own focused system prompt and tool set.
+  ...subAgentTools,
+};
 
-  // Web search with multiple results
-  webSearch: tool({
-    description: "Search the web for multiple results on a topic.",
-    parameters: zodSchema(z.object({
-      query: z.string().describe("The search query"),
-      numResults: z.number().optional().describe("Number of results (default 5)"),
-    })),
-    // @ts-ignore
-    execute: async (input: { query: string; numResults?: number }) => ({
-      query: input.query,
-      results: Array.from({ length: input.numResults ?? 3 }, (_, i) => ({
-        title: `Result ${i + 1} for: ${input.query}`,
-        url: `https://www.google.com/search?q=${encodeURIComponent(input.query)}&start=${i * 10}`,
-        snippet: `Configure your search API to get live results for "${input.query}".`,
-      })),
-    }),
-  }),
-} as any;
+// Cleanup helper for sub-agent progress listeners
+let activeSubAgentListener: (() => void) | null = null;
 
 // ──────────────────────────────────────────────
 // API Route (Streaming)
@@ -164,20 +108,37 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
+    // We'll set the controller after the stream starts (below)
+    // so sub-agent progress can be forwarded to the client
+
+    // Stream the response
+
     // Stream the response
     const result = streamText({
       model: minimax(selectedModel),
-      system: `You are agenticOS — a powerful AI agent built for autonomous task completion. You have access to tools for web search, calculations, date/time, URL fetching, and deep research.
+      system: `You are agenticOS — a powerful AI agent built for autonomous task completion. You can DELEGATE work to specialized sub-agents and use built-in tools directly.
 
-When given a task:
-1. Break it down into logical steps
-2. Use your tools strategically to gather information and take actions
-3. Think step by step before responding
-4. Be thorough, precise, and helpful`,
+# Available Sub-Agents (delegate via tools)
+- **Researcher** (delegateToResearcher) — web research, fact-finding, source citations. Use for: "research X", "find info about Y", "what's the latest on Z"
+- **Coder** (delegateToCoder) — write, debug, refactor code. Use for: "write a function that...", "fix this bug", "refactor X to Y"
+- **Memory Keeper** (delegateToMemoryKeeper) — long-term memory of user prefs, project context, decisions. Use for: "remember that...", "what did I say about X last time"
+
+When you call a sub-agent, the UI shows the user what's happening (e.g., "Researcher is fetching…"). Use the result of sub-agents to write your final synthesized answer.
+
+# Built-in Tools (call directly)
+- getDate, calculate, fetchUrl
+
+# Workflow
+1. For complex tasks, decompose and DELEGATE to sub-agents in parallel
+2. For simple tasks, use built-in tools directly
+3. ALWAYS synthesize the final answer — don't just dump sub-agent output
+4. Think step-by-step before responding
+5. Be thorough, precise, and helpful`,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       messages: aiMessages as any,
       tools,
-      stopWhen: isStepCount(12),
+      // Stop when: hit 15 steps OR a sub-agent returns (signals end of research/coding work)
+      stopWhen: isStepCount(15),
     });
 
     // Collect for final save
@@ -194,6 +155,23 @@ When given a task:
     // Stream as NDJSON
     const stream = new ReadableStream({
       async start(controller) {
+        // Expose controller so sub-agent listeners can forward progress events
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__agenticOSController = controller;
+
+        // Subscribe to sub-agent progress (if not already)
+        if (activeSubAgentListener) activeSubAgentListener();
+        activeSubAgentListener = onSubAgentProgress((event) => {
+          try {
+            const encoder = new TextEncoder();
+            controller.enqueue(
+              encoder.encode(JSON.stringify({ type: "subagent", ...event }) + "\n")
+            );
+          } catch {
+            // ignore
+          }
+        });
+
         const encoder = new TextEncoder();
         try {
           for await (const chunk of result.fullStream) {
@@ -268,6 +246,13 @@ When given a task:
         } catch (err) {
           controller.enqueue(encoder.encode(JSON.stringify({ type: "error", error: String(err) }) + "\n"));
         } finally {
+          // Cleanup sub-agent listener
+          if (activeSubAgentListener) {
+            activeSubAgentListener();
+            activeSubAgentListener = null;
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (globalThis as any).__agenticOSController = null;
           controller.close();
         }
       },

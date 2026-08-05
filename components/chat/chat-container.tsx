@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/app/(app)/layout";
 import MessageActionBar from "@/components/chat/message-action-bar";
+import SubAgentActivity from "@/components/chat/subagent-activity";
 
 // ──────────────────────────────────────────────
 // AI Elements
@@ -100,6 +101,17 @@ interface SourceItem {
   snippet?: string;
 }
 
+interface SubAgentEvent {
+  agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst";
+  task: string;
+  status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
+  message: string;
+  toolName?: string;
+  result?: string;
+  durationMs?: number;
+  ts: number;
+}
+
 interface MessageData {
   id: string;
   role: "user" | "assistant" | "system";
@@ -109,6 +121,7 @@ interface MessageData {
   citations?: SourceItem[];
   model?: string;
   agent?: string;
+  subagentActivity?: SubAgentEvent[];
   createdAt: string;
 }
 
@@ -285,6 +298,11 @@ function MessageBubble({ msg, isStreaming }: { msg: MessageData; isStreaming?: b
 
         {!isUser && msg.citations && msg.citations.length > 0 && (
           <SourcesBlock sources={msg.citations} />
+        )}
+
+        {/* Sub-agent activity (delegation timeline) — shown above content when present */}
+        {!isUser && msg.subagentActivity && msg.subagentActivity.length > 0 && (
+          <SubAgentActivity events={msg.subagentActivity} isStreaming={isStreaming} />
         )}
 
         {msg.content ? (
@@ -622,6 +640,7 @@ export default function ChatContainer({
         let reasoningSteps: ReasoningStep[] = [];
         let toolCalls: ToolCallPart[] = [];
         let citations: SourceItem[] = [];
+        let subagentActivity: SubAgentEvent[] = [];
         let reasoningBuffer = "";
 
         const assistantMsg: MessageData = {
@@ -699,6 +718,29 @@ export default function ChatContainer({
                   updated[updated.length - 1] = { ...updated[updated.length - 1], citations };
                   return updated;
                 });
+              } else if (data.type === "subagent") {
+                subagentActivity.push({
+                  agent: data.agent,
+                  task: data.task,
+                  status: data.status,
+                  message: data.message,
+                  toolName: data.toolName,
+                  result: data.result,
+                  durationMs: data.durationMs,
+                  ts: Date.now(),
+                });
+                // Keep only last 30 events to avoid bloat
+                if (subagentActivity.length > 30) {
+                  subagentActivity = subagentActivity.slice(-30);
+                }
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = {
+                    ...updated[updated.length - 1],
+                    subagentActivity: [...subagentActivity],
+                  };
+                  return updated;
+                });
               } else if (data.type === "finish") {
                 setIsStreaming(false);
               }
@@ -716,6 +758,7 @@ export default function ChatContainer({
             reasoningSteps: finalSteps,
             toolCalls,
             citations,
+            subagentActivity: subagentActivity.length > 0 ? subagentActivity : undefined,
           };
           return updated;
         });
