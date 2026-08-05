@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 interface SubAgentEvent {
-  agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst" | "browser";
+  agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst" | "browser" | "knowledge";
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
   message: string;
@@ -56,6 +56,12 @@ const AGENT_META: Record<
     color: "text-info",
     bg: "bg-info/10 border-info/20",
   },
+  knowledge: {
+    name: "Knowledge",
+    icon: BookOpenIcon,
+    color: "text-accent-foreground",
+    bg: "bg-accent/20 border-accent/40",
+  },
   writer: {
     name: "Writer",
     icon: PenIcon,
@@ -81,6 +87,11 @@ const TOOL_ICONS: Record<string, React.ElementType> = {
   search_web: SearchIcon,
   browse_website: GlobeIcon,
   extract_links: GlobeIcon,
+  add_document: BookOpenIcon,
+  search_knowledge: SearchIcon,
+  list_documents: BookOpenIcon,
+  get_document: BookOpenIcon,
+  delete_document: BookOpenIcon,
 };
 
 export default function SubAgentActivity({

@@ -8,6 +8,7 @@ import { runResearcher } from "./researcher";
 import { runCoder } from "./coder";
 import { runMemoryKeeper } from "./memory-keeper";
 import { runBrowser } from "./browser";
+import { runKnowledge } from "./knowledge";
 import type { SubAgentId } from "./types";
 
 // Re-export sub-agent runners
@@ -15,11 +16,12 @@ export { runResearcher } from "./researcher";
 export { runCoder } from "./coder";
 export { runMemoryKeeper } from "./memory-keeper";
 export { runBrowser } from "./browser";
+export { runKnowledge } from "./knowledge";
 
 // Progress event type — matches the existing chat-container event types
 export interface SubAgentProgressEvent {
   type: "subagent";
-  agent: SubAgentId | "browser";
+  agent: SubAgentId | "browser" | "knowledge";
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
   message: string;
@@ -247,6 +249,60 @@ export const subAgentTools: any = {
       });
       return {
         agent: "browser",
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        durationMs: result.durationMs,
+      };
+    },
+  }),
+
+  delegateToKnowledge: tool({
+    description:
+      "Delegate a knowledge base task to the Knowledge sub-agent. Use this to: add documents to the knowledge base, search for relevant info across stored documents, list existing documents, or retrieve specific document content. RAG with vector embeddings (auto-fallback to hash embeddings when no API key).",
+    parameters: zodSchema(
+      z.object({
+        task: z.string().describe("What to add, search, retrieve, or curate"),
+        context: z.string().optional().describe("Additional context"),
+      })
+    ),
+    execute: async (input: { task: string; context?: string }, options?: any) => {
+      const userId = options?.experimental_context?.userId || (globalThis as any).__currentChatUserId;
+      if (!userId) {
+        return { agent: "knowledge", success: false, output: "", error: "No userId in context" };
+      }
+      emit({
+        type: "subagent",
+        agent: "knowledge" as any,
+        task: input.task,
+        status: "started",
+        message: `Knowledge delegated: ${input.task}`,
+      });
+      const result = await runKnowledge({
+        task: input.task,
+        context: input.context,
+        userId,
+        onProgress: (p) =>
+          emit({
+            type: "subagent",
+            agent: "knowledge" as any,
+            task: input.task,
+            status: p.type,
+            message: p.message,
+            toolName: p.toolName,
+          }),
+      });
+      emit({
+        type: "subagent",
+        agent: "knowledge" as any,
+        task: input.task,
+        status: result.success ? "done" : "error",
+        message: result.success ? "Knowledge operation complete" : `Error: ${result.error}`,
+        result: result.output,
+        durationMs: result.durationMs,
+      });
+      return {
+        agent: "knowledge",
         success: result.success,
         output: result.output,
         error: result.error,

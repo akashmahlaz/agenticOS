@@ -102,7 +102,7 @@ interface SourceItem {
 }
 
 interface SubAgentEvent {
-  agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst" | "browser";
+  agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst" | "browser" | "knowledge";
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
   message: string;

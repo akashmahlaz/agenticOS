@@ -2,12 +2,43 @@
 // Neon PostgreSQL
 
 generator client {
-  provider = "prisma-client"
-  output   = "../lib/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../lib/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// ──────────────────────────────────────────────
+// Document — RAG knowledge base
+// Each document has a vector embedding (1536-d for OpenAI text-embedding-3-small)
+// Falls back to full-text search when no embedding API is configured
+// ──────────────────────────────────────────────
+model Document {
+  id String @id @default(cuid())
+  title String
+  content String @db.Text
+  source String? // URL, file name, or note
+  sourceType String @default("manual") // manual | url | file | note
+  tags String[] @default([])
+  chunkCount Int @default(1)
+  // 1536-d vector for OpenAI text-embedding-3-small
+  // Use Unsupported type since pgvector is not natively supported in Prisma
+  embedding Float[] @default([])
+  embeddingModel String? // "text-embedding-3-small" | "text-embedding-ada-002" | "fallback-hash"
+  hasRealEmbedding Boolean @default(false) // true = vector search, false = full-text only
+  // Full-text search
+  tsv Unsupported("tsvector")?
+  userId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, sourceType])
+  @@index([userId, updatedAt])
+  @@index([userId, hasRealEmbedding])
 }
 
 // ──────────────────────────────────────────────

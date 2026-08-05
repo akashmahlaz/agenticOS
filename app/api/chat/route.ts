@@ -14,6 +14,7 @@ import {
   initDefaultMemory,
   MEMORY_FILE_PATHS,
 } from "@/lib/memory/manager";
+import { buildRagContext } from "@/lib/rag/manager";
 
 // ──────────────────────────────────────────────
 // Built-in Tools
@@ -114,17 +115,26 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
-    // ── Auto-recall memory ──
-    // Build a context block from the user's memory files, entries, and recent notes
+    // ── Auto-recall memory + RAG ──
+    // Build a context block from the user's memory files, entries, recent notes,
+    // AND the knowledge base (RAG with vector embeddings)
     let memoryContext: string | null = null;
+    let ragContext: string | null = null;
     try {
       // Initialize default memory files on first chat (idempotent)
       await initDefaultMemory(userId);
       // Build context from current conversation's last user message
       const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
-      memoryContext = await buildMemoryContext(userId, lastUserMsg?.content);
+      const query = lastUserMsg?.content || "";
+      // Run memory and RAG in parallel
+      const [mem, rag] = await Promise.all([
+        buildMemoryContext(userId, query),
+        buildRagContext(userId, query, 3),
+      ]);
+      memoryContext = mem;
+      ragContext = rag;
     } catch (err) {
-      console.error("[chat] memory recall failed:", err);
+      console.error("[chat] context recall failed:", err);
     }
 
     // Set global userId for sub-agents to access
@@ -143,6 +153,7 @@ export async function POST(req: Request) {
 - **Coder** (delegateToCoder) — write, debug, refactor code. Use for: "write a function that...", "fix this bug", "refactor X to Y"
 - **Browser** (delegateToBrowser) — live web search (DuckDuckGo, no API key) + URL fetching with HTML cleaning. Use for: "search for...", "what's on example.com", "fetch this URL"
 - **Memory Keeper** (delegateToMemoryKeeper) — long-term memory of user prefs, project context, decisions. Use for: "remember that...", "what did I say about X last time"
+- **Knowledge** (delegateToKnowledge) — RAG over the user's knowledge base. Use for: "save this to my knowledge base", "search my docs for X", "what have I saved about Y"
 
 When you call a sub-agent, the UI shows the user what's happening (e.g., "Researcher is fetching…"). Use the result of sub-agents to write your final synthesized answer.
 
@@ -152,6 +163,7 @@ When you call a sub-agent, the UI shows the user what's happening (e.g., "Resear
 # Memory
 You have access to the user's long-term memory. Relevant context is auto-injected below.
 ${memoryContext ? `\n${memoryContext}\n` : ""}
+${ragContext ? `\n${ragContext}\n` : ""}
 
 # Workflow
 1. For complex tasks, decompose and DELEGATE to sub-agents in parallel
