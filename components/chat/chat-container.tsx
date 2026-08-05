@@ -767,7 +767,7 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
                 onChange={handleTextChange}
                 placeholder="Ask anything…"
                 disabled={loading}
-                className="min-h-12 max-h-40 text-[15px] leading-relaxed placeholder:text-muted-foreground/60 resize-none border-0 !bg-transparent !shadow-none !ring-0 px-4 py-3 focus-visible:!outline-none focus-visible:!ring-0"
+                className="min-h-12 max-h-40 text-[15px] leading-relaxed placeholder:text-muted-foreground/60 resize-none border-0 !bg-transparent !shadow-none !ring-0 px-4 py-3 focus-visible:!outline-none focus-visible:!ring-0 focus-visible:!border-transparent"
                 rows={1}
               />
             </PromptInputBody>
