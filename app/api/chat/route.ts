@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Streaming chat API — agenticOS
-// MiniMax M2 with chain-of-thought, streaming + tool calling + sub-agents
+// MiniMax M2 with chain-of-thought, streaming + tool calling + sub-agents + auto memory
 
 import { createMinimax } from "vercel-minimax-ai-provider";
 import { streamText, tool, zodSchema, isStepCount, hasToolCall } from "ai";
@@ -8,6 +8,12 @@ import { getUserIdFromRequest } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { z } from "zod";
 import { subAgentTools, onSubAgentProgress } from "@/lib/agents/orchestrator";
+import {
+  buildMemoryContext,
+  autoCaptureFromTurn,
+  initDefaultMemory,
+  MEMORY_FILE_PATHS,
+} from "@/lib/memory/manager";
 
 // ──────────────────────────────────────────────
 // Built-in Tools
@@ -108,10 +114,24 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
+    // ── Auto-recall memory ──
+    // Build a context block from the user's memory files, entries, and recent notes
+    let memoryContext: string | null = null;
+    try {
+      // Initialize default memory files on first chat (idempotent)
+      await initDefaultMemory(userId);
+      // Build context from current conversation's last user message
+      const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
+      memoryContext = await buildMemoryContext(userId, lastUserMsg?.content);
+    } catch (err) {
+      console.error("[chat] memory recall failed:", err);
+    }
+
+    // Set global userId for sub-agents to access
+    (globalThis as any).__currentChatUserId = userId;
+
     // We'll set the controller after the stream starts (below)
     // so sub-agent progress can be forwarded to the client
-
-    // Stream the response
 
     // Stream the response
     const result = streamText({
@@ -127,6 +147,10 @@ When you call a sub-agent, the UI shows the user what's happening (e.g., "Resear
 
 # Built-in Tools (call directly)
 - getDate, calculate, fetchUrl
+
+# Memory
+You have access to the user's long-term memory. Relevant context is auto-injected below.
+${memoryContext ? `\n${memoryContext}\n` : ""}
 
 # Workflow
 1. For complex tasks, decompose and DELEGATE to sub-agents in parallel
@@ -246,6 +270,33 @@ When you call a sub-agent, the UI shows the user what's happening (e.g., "Resear
         } catch (err) {
           controller.enqueue(encoder.encode(JSON.stringify({ type: "error", error: String(err) }) + "\n"));
         } finally {
+          // ── Auto-capture memory from this turn ──
+          // Extract facts from the user's last message and the assistant's response
+          try {
+            const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
+            if (lastUserMsg && fullText) {
+              const captured = await autoCaptureFromTurn(
+                userId,
+                lastUserMsg.content,
+                fullText,
+                sessionId
+              );
+              if (captured > 0) {
+                controller.enqueue(
+                  encoder.encode(
+                    JSON.stringify({
+                      type: "memory",
+                      event: "auto-captured",
+                      count: captured,
+                    }) + "\n"
+                  )
+                );
+              }
+            }
+          } catch (err) {
+            console.error("[chat] auto-capture failed:", err);
+          }
+
           // Cleanup sub-agent listener
           if (activeSubAgentListener) {
             activeSubAgentListener();
@@ -253,6 +304,8 @@ When you call a sub-agent, the UI shows the user what's happening (e.g., "Resear
           }
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (globalThis as any).__agenticOSController = null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (globalThis as any).__currentChatUserId = null;
           controller.close();
         }
       },

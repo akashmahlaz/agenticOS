@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { MessageSquareIcon, MicIcon, CodeIcon, WorkflowIcon, FileTextIcon } from "lucide-react";
+import { MessageSquareIcon, MicIcon, CodeIcon, WorkflowIcon, FileTextIcon, DatabaseIcon } from "lucide-react";
 
 const MODES = [
   { id: "chat", label: "Chat", icon: MessageSquareIcon, path: "/" },
@@ -9,6 +9,7 @@ const MODES = [
   { id: "code", label: "Code", icon: CodeIcon, path: "/code" },
   { id: "workflow", label: "Workflow", icon: WorkflowIcon, path: "/workflow" },
   { id: "artifacts", label: "Artifacts", icon: FileTextIcon, path: "/artifacts" },
+  { id: "memory", label: "Memory", icon: DatabaseIcon, path: "/memory" },
 ];
 
 export default function ModeSwitcher() {

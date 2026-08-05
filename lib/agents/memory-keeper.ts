@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Memory Keeper sub-agent — focused on long-term memory of the user
-// Reads/writes MEMORY.md, USER.md, daily notes
+// Reads/writes MEMORY.md, USER.md, daily notes (DB-backed via lib/memory/manager)
 // Auto-recall: searches memory before each turn
 // Auto-capture: extracts facts from conversation with provenance labels
 
@@ -8,6 +8,19 @@ import { createMinimax } from "vercel-minimax-ai-provider";
 import { generateText, tool, zodSchema } from "ai";
 import { z } from "zod";
 import type { SubAgentCallOptions, SubAgentResult } from "./types";
+import {
+  getMemoryFile,
+  writeMemoryFile,
+  appendMemoryFile,
+  addMemoryEntry,
+  searchMemoryEntries,
+  getTopMemoryEntries,
+  getTodaysNote,
+  appendToTodaysNote,
+  getRecentDailyNotes,
+  MEMORY_FILE_PATHS,
+  PROVENANCE_VALID,
+} from "@/lib/memory/manager";
 
 const minimax = (apiKey: string) => createMinimax({ apiKey });
 
@@ -18,6 +31,7 @@ Your ONLY job is to maintain the user's long-term memory. You are NOT the main a
 Memory tiers you manage:
 - **USER.md** — durable facts about the user (name, role, projects, preferences)
 - **MEMORY.md** — curated long-term knowledge (key decisions, project context)
+- **IDENTITY.md**, **SOUL.md** — identity and personality metadata
 - **memory/YYYY-MM-DD.md** — daily notes (running context, observations)
 
 Provenance labels (REQUIRED when writing):
@@ -26,11 +40,14 @@ Provenance labels (REQUIRED when writing):
 - \`confirmed_by_user\` — user explicitly stated this
 - \`imported_from_transcript\` — came from a document/transcript
 
+Importance scale: 1-10 (1=trivial, 10=critical).
+
 Workflow:
-1. **Search** memory first with \`memorySearch\` to find related context.
-2. **Read** relevant files with \`memoryGet\`.
-3. **Write** new facts with \`memoryWrite\` (always include provenance).
+1. **Search** memory first with \`memory_search\` to find related context.
+2. **Read** relevant files with \`memory_get\`.
+3. **Write** new facts with \`memory_save\` (always include provenance + importance).
 4. **Update** existing facts by appending or merging (never delete without asking).
+5. **Log to today's note** with \`memory_log_today\` for any session activity.
 
 Output rules:
 - Be precise — facts are stored, not summarized away.
@@ -42,10 +59,11 @@ Output rules:
 Return ONLY the result of your memory operation. Do not include meta-commentary.`;
 
 export async function runMemoryKeeper(
-  opts: SubAgentCallOptions
+  opts: SubAgentCallOptions & { userId?: string }
 ): Promise<SubAgentResult> {
   const start = Date.now();
   const apiKey = process.env.MINIMAX_API_KEY;
+  const userId = opts.userId || (opts as any).context?.userId;
 
   if (!apiKey) {
     return {
@@ -54,6 +72,17 @@ export async function runMemoryKeeper(
       output: "",
       success: false,
       error: "MINIMAX_API_KEY not configured",
+      durationMs: 0,
+    };
+  }
+
+  if (!userId) {
+    return {
+      agent: "memory-keeper",
+      task: opts.task,
+      output: "",
+      success: false,
+      error: "userId required for memory operations",
       durationMs: 0,
     };
   }
@@ -68,77 +97,269 @@ export async function runMemoryKeeper(
         ? `Task: ${opts.task}\n\nContext: ${opts.context}`
         : `Task: ${opts.task}`,
       tools: {
-        memorySearch: tool({
-          description: "Search the user's memory files for relevant context.",
+        memory_search: tool({
+          description: "Search the user's memory entries for relevant context.",
           parameters: zodSchema(
             z.object({
               query: z.string().describe("What to search for"),
+              limit: z.number().optional().describe("Max results (default 10)"),
             })
           ),
-          execute: async ({ query }) => {
+          execute: async ({ query, limit = 10 }) => {
             opts.onProgress?.({
               type: "tool-call",
               message: `Searching memory: ${query}`,
-              toolName: "memorySearch",
+              toolName: "memory_search",
             });
-            // Stub — would call real memory search API
-            const hits = [
-              { file: "USER.md", line: "User is building agenticOS", relevance: 0.92 },
-              { file: "MEMORY.md", line: "Stack: Next.js 16, MiniMax M2, Neon", relevance: 0.85 },
-            ].filter((h) => h.line.toLowerCase().includes(query.toLowerCase()));
+            const hits = await searchMemoryEntries(userId, query, { limit });
             opts.onProgress?.({
               type: "tool-result",
               message: `Found ${hits.length} matches`,
-              toolName: "memorySearch",
+              toolName: "memory_search",
             });
-            return { query, hits };
+            return {
+              query,
+              count: hits.length,
+              entries: hits.map((e) => ({
+                fact: e.fact,
+                provenance: e.provenance,
+                importance: e.importance,
+                category: e.category,
+                createdAt: e.createdAt,
+              })),
+            };
           },
         }),
 
-        memoryGet: tool({
-          description: "Read a specific memory file or section.",
+        memory_get: tool({
+          description: "Read a specific memory file (USER.md, MEMORY.md, IDENTITY.md, SOUL.md).",
           parameters: zodSchema(
             z.object({
-              path: z.string().describe("File path, e.g. 'USER.md' or 'memory/2026-08-05.md'"),
+              path: z
+                .string()
+                .describe("File path, e.g. 'USER.md', 'MEMORY.md'"),
             })
           ),
           execute: async ({ path }) => {
             opts.onProgress?.({
               type: "tool-call",
               message: `Reading ${path}`,
-              toolName: "memoryGet",
+              toolName: "memory_get",
             });
-            // Stub
-            return { path, content: `# ${path}\n\n[Memory contents placeholder]` };
+            const file = await getMemoryFile(userId, path);
+            if (!file) {
+              return { path, found: false, content: null };
+            }
+            opts.onProgress?.({
+              type: "tool-result",
+              message: `Read ${file.charCount} chars (v${file.version})`,
+              toolName: "memory_get",
+            });
+            return {
+              path: file.path,
+              title: file.title,
+              content: file.content,
+              version: file.version,
+              lastEditedBy: file.lastEditedBy,
+              updatedAt: file.updatedAt,
+              found: true,
+            };
           },
         }),
 
-        memoryWrite: tool({
-          description: "Write a new fact to a memory file with provenance label.",
+        memory_save: tool({
+          description:
+            "Save a new fact to memory with provenance label. Stores in the MemoryEntry table (not a file).",
           parameters: zodSchema(
             z.object({
-              path: z.string().describe("File to write to"),
               fact: z.string().describe("The fact to remember"),
               provenance: z
-                .enum(["observed_from_source", "inferred_by_model", "confirmed_by_user", "imported_from_transcript"])
+                .enum(PROVENANCE_VALID as [string, ...string[]])
                 .describe("Where this fact came from"),
-              importance: z.number().min(1).max(10).optional().describe("1-10 scale"),
+              category: z
+                .enum(["user", "project", "preference", "fact", "decision", "context"])
+                .optional()
+                .describe("Optional category for filtering"),
+              importance: z
+                .number()
+                .min(1)
+                .max(10)
+                .optional()
+                .describe("1-10 scale (default 5)"),
             })
           ),
-          execute: async ({ path, fact, provenance, importance }) => {
+          execute: async ({ fact, provenance, category, importance }) => {
             opts.onProgress?.({
               type: "tool-call",
-              message: `Saving to ${path}`,
-              toolName: "memoryWrite",
+              message: `Saving: ${fact.slice(0, 50)}...`,
+              toolName: "memory_save",
             });
-            // Stub — would call real memory write API
+            const entry = await addMemoryEntry({
+              userId,
+              fact,
+              provenance: provenance as any,
+              category: category as any,
+              importance,
+            });
+            opts.onProgress?.({
+              type: "tool-result",
+              message: `Saved (importance ${entry.importance}/10)`,
+              toolName: "memory_save",
+            });
             return {
               saved: true,
-              path,
-              fact,
-              provenance,
-              importance: importance ?? 5,
-              timestamp: new Date().toISOString(),
+              id: entry.id,
+              fact: entry.fact,
+              provenance: entry.provenance,
+              importance: entry.importance,
+            };
+          },
+        }),
+
+        memory_write_file: tool({
+          description:
+            "Overwrite a memory file (USER.md, MEMORY.md, IDENTITY.md, SOUL.md) with new content. Use append_memory_file for incremental updates.",
+          parameters: zodSchema(
+            z.object({
+              path: z.string().describe("File path"),
+              content: z.string().describe("Full new content"),
+              title: z.string().optional().describe("Optional title"),
+            })
+          ),
+          execute: async ({ path, content, title }) => {
+            opts.onProgress?.({
+              type: "tool-call",
+              message: `Writing ${path} (${content.length} chars)`,
+              toolName: "memory_write_file",
+            });
+            const file = await writeMemoryFile(userId, path, content, title, "agent");
+            opts.onProgress?.({
+              type: "tool-result",
+              message: `Wrote v${file.version}`,
+              toolName: "memory_write_file",
+            });
+            return {
+              saved: true,
+              path: file.path,
+              version: file.version,
+              charCount: file.charCount,
+            };
+          },
+        }),
+
+        append_memory_file: tool({
+          description: "Append content to an existing memory file.",
+          parameters: zodSchema(
+            z.object({
+              path: z.string().describe("File path"),
+              content: z.string().describe("Content to append"),
+            })
+          ),
+          execute: async ({ path, content }) => {
+            opts.onProgress?.({
+              type: "tool-call",
+              message: `Appending to ${path}`,
+              toolName: "append_memory_file",
+            });
+            const file = await appendMemoryFile(userId, path, content);
+            opts.onProgress?.({
+              type: "tool-result",
+              message: `Now ${file.charCount} chars`,
+              toolName: "append_memory_file",
+            });
+            return {
+              appended: true,
+              path: file.path,
+              charCount: file.charCount,
+            };
+          },
+        }),
+
+        memory_log_today: tool({
+          description: "Log a timestamped entry to today's daily note.",
+          parameters: zodSchema(
+            z.object({
+              entry: z.string().describe("The note to log"),
+            })
+          ),
+          execute: async ({ entry }) => {
+            opts.onProgress?.({
+              type: "tool-call",
+              message: `Logging to today's note`,
+              toolName: "memory_log_today",
+            });
+            const note = await appendToTodaysNote(userId, entry);
+            opts.onProgress?.({
+              type: "tool-result",
+              message: `Now ${note.entryCount} entries today`,
+              toolName: "memory_log_today",
+            });
+            return {
+              logged: true,
+              date: note.date,
+              entryCount: note.entryCount,
+            };
+          },
+        }),
+
+        memory_top: tool({
+          description: "Get the top N most important memory entries (used for context recall).",
+          parameters: zodSchema(
+            z.object({
+              limit: z.number().optional().describe("Max entries (default 20)"),
+            })
+          ),
+          execute: async ({ limit = 20 }) => {
+            opts.onProgress?.({
+              type: "tool-call",
+              message: `Recalling top ${limit} memories`,
+              toolName: "memory_top",
+            });
+            const entries = await getTopMemoryEntries(userId, limit);
+            opts.onProgress?.({
+              type: "tool-result",
+              message: `Recalled ${entries.length} memories`,
+              toolName: "memory_top",
+            });
+            return {
+              count: entries.length,
+              entries: entries.map((e) => ({
+                fact: e.fact,
+                provenance: e.provenance,
+                importance: e.importance,
+                category: e.category,
+                lastAccessedAt: e.lastAccessedAt,
+              })),
+            };
+          },
+        }),
+
+        memory_recent_notes: tool({
+          description: "Get recent daily notes (last N days).",
+          parameters: zodSchema(
+            z.object({
+              days: z.number().optional().describe("Number of days (default 7)"),
+            })
+          ),
+          execute: async ({ days = 7 }) => {
+            opts.onProgress?.({
+              type: "tool-call",
+              message: `Fetching last ${days} daily notes`,
+              toolName: "memory_recent_notes",
+            });
+            const notes = await getRecentDailyNotes(userId, days);
+            opts.onProgress?.({
+              type: "tool-result",
+              message: `Got ${notes.length} notes`,
+              toolName: "memory_recent_notes",
+            });
+            return {
+              count: notes.length,
+              notes: notes.map((n) => ({
+                date: n.date,
+                content: n.content,
+                entryCount: n.entryCount,
+              })),
             };
           },
         }),

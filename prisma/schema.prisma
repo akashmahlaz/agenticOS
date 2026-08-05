@@ -11,6 +11,66 @@ datasource db {
 }
 
 // ──────────────────────────────────────────────
+// MemoryFile — durable per-user memory files (USER.md, MEMORY.md, IDENTITY.md, SOUL.md)
+// ──────────────────────────────────────────────
+model MemoryFile {
+  id     String @id @default(cuid())
+  path   String // e.g. "USER.md", "MEMORY.md", "IDENTITY.md", "SOUL.md"
+  title  String
+  content String @db.Text
+  version Int @default(1)
+  charCount Int @default(0)
+  lastEditedBy String? // "user" | "agent" | "system"
+  userId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, path])
+  @@index([userId])
+  @@index([userId, updatedAt])
+}
+
+// ──────────────────────────────────────────────
+// MemoryEntry — individual facts with provenance
+// ──────────────────────────────────────────────
+model MemoryEntry {
+  id String @id @default(cuid())
+  fact String @db.Text
+  provenance String // observed_from_source | inferred_by_model | confirmed_by_user | imported_from_transcript
+  category String? // e.g. "user", "project", "preference", "fact"
+  importance Int @default(5) // 1-10
+  confidence Float @default(0.8) // 0-1
+  sourceSessionId String? // which session introduced this
+  sourceMessageId String? // which message
+  userId String
+  createdAt DateTime @default(now())
+  lastAccessedAt DateTime?
+
+  @@index([userId])
+  @@index([userId, importance])
+  @@index([userId, category])
+  @@index([userId, createdAt])
+}
+
+// ──────────────────────────────────────────────
+// MemoryDaily — daily notes (memory/YYYY-MM-DD.md)
+// ──────────────────────────────────────────────
+model MemoryDaily {
+  id String @id @default(cuid())
+  date String @unique // YYYY-MM-DD
+  content String @db.Text
+  summary String? // auto-generated
+  entryCount Int @default(0)
+  userId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([userId, date])
+}
+
+// ──────────────────────────────────────────────
 // User — with auth
 // ──────────────────────────────────────────────
 model User {

@@ -159,7 +159,12 @@ export const subAgentTools: any = {
         task: z.string().describe("What to remember, recall, or update"),
       })
     ),
-    execute: async (input: { task: string }) => {
+    execute: async (input: { task: string }, options?: any) => {
+      // Extract userId from the experimental context (Vercel AI SDK passes it)
+      const userId = options?.experimental_context?.userId || (globalThis as any).__currentChatUserId;
+      if (!userId) {
+        return { agent: "memory-keeper", success: false, output: "", error: "No userId in context" };
+      }
       emit({
         type: "subagent",
         agent: "memory-keeper",
@@ -169,6 +174,7 @@ export const subAgentTools: any = {
       });
       const result = await runMemoryKeeper({
         task: input.task,
+        userId,
         onProgress: (p) =>
           emit({
             type: "subagent",
