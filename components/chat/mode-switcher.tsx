@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { MessageSquareIcon, MicIcon, CodeIcon, WorkflowIcon, FileTextIcon, DatabaseIcon, BookOpenIcon } from "lucide-react";
+import { MessageSquareIcon, MicIcon, CodeIcon, WorkflowIcon, FileTextIcon, DatabaseIcon, BookOpenIcon, KeyIcon, UserIcon } from "lucide-react";
 
 const MODES = [
   { id: "chat", label: "Chat", icon: MessageSquareIcon, path: "/" },
@@ -11,6 +11,8 @@ const MODES = [
   { id: "artifacts", label: "Artifacts", icon: FileTextIcon, path: "/artifacts" },
   { id: "knowledge", label: "Knowledge", icon: BookOpenIcon, path: "/knowledge" },
   { id: "memory", label: "Memory", icon: DatabaseIcon, path: "/memory" },
+  { id: "secrets", label: "Secrets", icon: KeyIcon, path: "/secrets" },
+  { id: "personalization", label: "You", icon: UserIcon, path: "/settings/personalization" },
 ];
 
 export default function ModeSwitcher() {

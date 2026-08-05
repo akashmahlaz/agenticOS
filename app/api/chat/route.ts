@@ -15,6 +15,11 @@ import {
   MEMORY_FILE_PATHS,
 } from "@/lib/memory/manager";
 import { buildRagContext } from "@/lib/rag/manager";
+import {
+  buildPersonalizationContext,
+  initUserProfile,
+} from "@/lib/personalization/manager";
+import { captureLearnings, findMatchingSkills } from "@/lib/personalization/self-learning";
 
 // ──────────────────────────────────────────────
 // Built-in Tools
@@ -115,24 +120,40 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
-    // ── Auto-recall memory + RAG ──
+    // ── Auto-recall memory + RAG + personalization + skills ──
     // Build a context block from the user's memory files, entries, recent notes,
-    // AND the knowledge base (RAG with vector embeddings)
+    // the knowledge base (RAG with vector embeddings), personalization profile,
+    // AND any learned skills that match the current query
     let memoryContext: string | null = null;
     let ragContext: string | null = null;
+    let personalizationContext: string | null = null;
+    let skillsContext: string | null = null;
     try {
       // Initialize default memory files on first chat (idempotent)
       await initDefaultMemory(userId);
       // Build context from current conversation's last user message
       const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
       const query = lastUserMsg?.content || "";
-      // Run memory and RAG in parallel
-      const [mem, rag] = await Promise.all([
+      // Run all context lookups in parallel
+      const [mem, rag, profile, skills] = await Promise.all([
         buildMemoryContext(userId, query),
         buildRagContext(userId, query, 3),
+        buildPersonalizationContext(userId),
+        findMatchingSkills(userId, query),
       ]);
       memoryContext = mem;
       ragContext = rag;
+      personalizationContext = profile;
+      if (skills.length > 0) {
+        skillsContext =
+          `## Learned Skills (apply if relevant)\n` +
+          skills
+            .map(
+              (s) =>
+                `- **${s.name}** (used ${s.useCount}x): ${s.description}`
+            )
+            .join("\n");
+      }
     } catch (err) {
       console.error("[chat] context recall failed:", err);
     }
@@ -154,6 +175,14 @@ export async function POST(req: Request) {
 - **Browser** (delegateToBrowser) — live web search (DuckDuckGo, no API key) + URL fetching with HTML cleaning. Use for: "search for...", "what's on example.com", "fetch this URL"
 - **Memory Keeper** (delegateToMemoryKeeper) — long-term memory of user prefs, project context, decisions. Use for: "remember that...", "what did I say about X last time"
 - **Knowledge** (delegateToKnowledge) — RAG over the user's knowledge base. Use for: "save this to my knowledge base", "search my docs for X", "what have I saved about Y"
+- **Operator** (delegateToOperator) — run shell commands (sandboxed, with approval for dangerous ones). Use for: "run this command", "check the system", "list files"
+
+# Direct Tools (built-in)
+- **Secret management**: secret_list, secret_get, secret_save, secret_delete
+  Use to manage encrypted API keys, tokens, credentials. Always encrypt user secrets.
+
+# Personalization
+You have access to the user's profile (durable directives) and learned skills. Follow the directives strictly. Apply learned skills when their trigger phrases appear in the user's message.
 
 When you call a sub-agent, the UI shows the user what's happening (e.g., "Researcher is fetching…"). Use the result of sub-agents to write your final synthesized answer.
 
@@ -161,9 +190,11 @@ When you call a sub-agent, the UI shows the user what's happening (e.g., "Resear
 - getDate, calculate, fetchUrl
 
 # Memory
-You have access to the user's long-term memory. Relevant context is auto-injected below.
+You have access to the user's long-term memory, knowledge base, and learned skills. Relevant context is auto-injected below.
+${personalizationContext ? `\n${personalizationContext}\n` : ""}
 ${memoryContext ? `\n${memoryContext}\n` : ""}
 ${ragContext ? `\n${ragContext}\n` : ""}
+${skillsContext ? `\n${skillsContext}\n` : ""}
 
 # Workflow
 1. For complex tasks, decompose and DELEGATE to sub-agents in parallel
@@ -283,17 +314,20 @@ ${ragContext ? `\n${ragContext}\n` : ""}
         } catch (err) {
           controller.enqueue(encoder.encode(JSON.stringify({ type: "error", error: String(err) }) + "\n"));
         } finally {
-          // ── Auto-capture memory from this turn ──
+          // ── Auto-capture memory + learn from this turn ──
           // Extract facts from the user's last message and the assistant's response
           try {
             const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
             if (lastUserMsg && fullText) {
-              const captured = await autoCaptureFromTurn(
-                userId,
-                lastUserMsg.content,
-                fullText,
-                sessionId
-              );
+              const [captured, learnings] = await Promise.all([
+                autoCaptureFromTurn(
+                  userId,
+                  lastUserMsg.content,
+                  fullText,
+                  sessionId
+                ),
+                captureLearnings(userId, lastUserMsg.content),
+              ]);
               if (captured > 0) {
                 controller.enqueue(
                   encoder.encode(
@@ -301,6 +335,22 @@ ${ragContext ? `\n${ragContext}\n` : ""}
                       type: "memory",
                       event: "auto-captured",
                       count: captured,
+                    }) + "\n"
+                  )
+                );
+              }
+              if (learnings.count > 0) {
+                controller.enqueue(
+                  encoder.encode(
+                    JSON.stringify({
+                      type: "learning",
+                      event: "captured",
+                      count: learnings.count,
+                      detected: learnings.detected.map((d) => ({
+                        text: d.text,
+                        type: d.type,
+                        trigger: d.trigger,
+                      })),
                     }) + "\n"
                   )
                 );

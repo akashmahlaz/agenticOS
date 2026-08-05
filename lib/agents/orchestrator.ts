@@ -9,6 +9,7 @@ import { runCoder } from "./coder";
 import { runMemoryKeeper } from "./memory-keeper";
 import { runBrowser } from "./browser";
 import { runKnowledge } from "./knowledge";
+import { runOperator } from "./operator";
 import type { SubAgentId } from "./types";
 
 // Re-export sub-agent runners
@@ -17,11 +18,12 @@ export { runCoder } from "./coder";
 export { runMemoryKeeper } from "./memory-keeper";
 export { runBrowser } from "./browser";
 export { runKnowledge } from "./knowledge";
+export { runOperator } from "./operator";
 
 // Progress event type — matches the existing chat-container event types
 export interface SubAgentProgressEvent {
   type: "subagent";
-  agent: SubAgentId | "browser" | "knowledge";
+  agent: SubAgentId;
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
   message: string;
@@ -308,6 +310,164 @@ export const subAgentTools: any = {
         error: result.error,
         durationMs: result.durationMs,
       };
+    },
+  }),
+
+  delegateToOperator: tool({
+    description:
+      "Delegate a shell command task to the Operator sub-agent. Use this when the user wants to run shell commands, check system info, install packages, run scripts, etc. Sandboxed by default — dangerous commands (rm -rf, sudo, etc.) require user approval.",
+    parameters: zodSchema(
+      z.object({
+        task: z.string().describe("What you need the operator to do (run a command, check status, etc.)"),
+        context: z.string().optional().describe("Additional context"),
+        approvedCommands: z
+          .array(z.string())
+          .optional()
+          .describe("Pre-approved commands (bypasses the approval gate)"),
+      })
+    ),
+    execute: async (input: { task: string; context?: string; approvedCommands?: string[] }, options?: any) => {
+      const userId = options?.experimental_context?.userId || (globalThis as any).__currentChatUserId;
+      emit({
+        type: "subagent",
+        agent: "operator" as any,
+        task: input.task,
+        status: "started",
+        message: `Operator delegated: ${input.task}`,
+      });
+      const result = await runOperator({
+        task: input.task,
+        context: input.context,
+        approvedCommands: input.approvedCommands,
+        onProgress: (p) =>
+          emit({
+            type: "subagent",
+            agent: "operator" as any,
+            task: input.task,
+            status: p.type,
+            message: p.message,
+            toolName: p.toolName,
+          }),
+      });
+      emit({
+        type: "subagent",
+        agent: "operator" as any,
+        task: input.task,
+        status: result.success ? "done" : "error",
+        message: result.success ? "Operator finished" : `Error: ${result.error}`,
+        result: result.output,
+        durationMs: result.durationMs,
+      });
+      return {
+        agent: "operator",
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        durationMs: result.durationMs,
+      };
+    },
+  }),
+
+  // Secret tools (direct, not via sub-agent — these are sensitive)
+  secret_list: tool({
+    description:
+      "List the names of all secrets you've stored (without showing the values). Use this to find which API keys, tokens, or credentials are available.",
+    parameters: zodSchema(z.object({})),
+    execute: async (_input, options?: any) => {
+      const userId = options?.experimental_context?.userId || (globalThis as any).__currentChatUserId;
+      if (!userId) {
+        return { secrets: [], error: "No userId" };
+      }
+      const { listSecrets } = await import("@/lib/secrets/manager");
+      const secrets = await listSecrets(userId);
+      return {
+        secrets: secrets.map((s) => ({
+          name: s.name,
+          description: s.description,
+          service: s.service,
+          tags: s.tags,
+          hasValue: true,
+        })),
+      };
+    },
+  }),
+
+  secret_get: tool({
+    description:
+      "Retrieve a secret's value by its logical name (e.g. 'OPENAI_API_KEY'). The user has explicitly stored this secret. Use it carefully and only when needed.",
+    parameters: zodSchema(
+      z.object({
+        name: z.string().describe("The secret's logical name, e.g. 'OPENAI_API_KEY'"),
+      })
+    ),
+    execute: async ({ name }, options?: any) => {
+      const userId = options?.experimental_context?.userId || (globalThis as any).__currentChatUserId;
+      if (!userId) {
+        return { found: false, error: "No userId" };
+      }
+      const { getSecret } = await import("@/lib/secrets/manager");
+      const secret = await getSecret(userId, name);
+      if (!secret) {
+        return { found: false };
+      }
+      // Return a preview by default (first 4 + last 4 chars)
+      const preview =
+        secret.value.length > 12
+          ? `${secret.value.slice(0, 4)}...${secret.value.slice(-4)}`
+          : "****";
+      return {
+        found: true,
+        name: secret.name,
+        description: secret.description,
+        preview,
+        // Don't include full value unless explicitly needed (avoids leaking to logs)
+        value: secret.value,
+      };
+    },
+  }),
+
+  secret_save: tool({
+    description:
+      "Save a new secret or update an existing one. The value is encrypted at rest. Use this when the user gives you an API key, token, or credential and asks you to remember it.",
+    parameters: zodSchema(
+      z.object({
+        name: z.string().describe("Logical name, e.g. 'OPENAI_API_KEY'"),
+        value: z.string().describe("The secret value (will be encrypted)"),
+        service: z.string().optional().describe("Service name, e.g. 'openai', 'github'"),
+        description: z.string().optional().describe("What this secret is for"),
+      })
+    ),
+    execute: async ({ name, value, service, description }, options?: any) => {
+      const userId = options?.experimental_context?.userId || (globalThis as any).__currentChatUserId;
+      if (!userId) {
+        return { saved: false, error: "No userId" };
+      }
+      const { setSecret } = await import("@/lib/secrets/manager");
+      const secret = await setSecret(userId, name, value, {
+        service,
+        description,
+      });
+      return {
+        saved: true,
+        name: secret.name,
+        service: secret.service,
+        description: secret.description,
+      };
+    },
+  }),
+
+  secret_delete: tool({
+    description: "Delete a stored secret by its name.",
+    parameters: zodSchema(
+      z.object({ name: z.string().describe("The secret's logical name") })
+    ),
+    execute: async ({ name }, options?: any) => {
+      const userId = options?.experimental_context?.userId || (globalThis as any).__currentChatUserId;
+      if (!userId) {
+        return { deleted: false, error: "No userId" };
+      }
+      const { deleteSecret } = await import("@/lib/secrets/manager");
+      return await deleteSecret(userId, name);
     },
   }),
 };

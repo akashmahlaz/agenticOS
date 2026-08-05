@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { signToken } from "@/lib/auth";
+import { initUserProfile } from "@/lib/personalization/manager";
 
 export async function POST(req: Request) {
   try {
@@ -41,6 +42,15 @@ export async function POST(req: Request) {
         password: hashedPassword,
       },
     });
+
+    // Initialize personalization from day one (USER.md, SOUL.md, IDENTITY.md)
+    try {
+      await initUserProfile(user.id, {
+        name: user.name || undefined,
+      });
+    } catch (err) {
+      console.error("[signup] initUserProfile failed:", err);
+    }
 
     const token = signToken({ userId: user.id, email: user.email });
 

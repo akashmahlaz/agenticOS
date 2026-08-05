@@ -6,7 +6,11 @@ export type SubAgentId =
   | "coder"
   | "memory-keeper"
   | "writer"
-  | "analyst";
+  | "analyst"
+  | "browser"
+  | "knowledge"
+  | "operator"
+  | "personalization";
 
 export interface SubAgentResult {
   agent: SubAgentId;

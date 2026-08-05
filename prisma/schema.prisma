@@ -112,7 +112,110 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Onboarding flag — first-time setup wizard
+  onboardingCompleted Boolean @default(false)
+
   sessions  Session[]
+  profiles  UserProfile[]
+  skills    LearnedSkill[]
+  secrets   Secret[]
+}
+
+// ──────────────────────────────────────────────
+// UserProfile — durable directives (preferences, communication style)
+// OpenClaw-style: imperative directives with observed-date + active/superseded status
+// ──────────────────────────────────────────────
+model UserProfile {
+  id String @id @default(cuid())
+  directive String @db.Text // The actual preference, e.g. "Always use TypeScript for new code"
+  category String @default("preference") // preference | style | project | identity
+  observedDate DateTime @default(now())
+  status String @default("active") // active | superseded
+  supersedeId String? // pointer to replacement when status=superseded
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([userId, category])
+}
+
+// ──────────────────────────────────────────────
+// LearnedSkill — self-learned procedures from corrections / "from now on" patterns
+// OpenClaw Skill Workshop equivalent
+// ──────────────────────────────────────────────
+model LearnedSkill {
+  id String @id @default(cuid())
+  name String
+  description String @db.Text
+  procedure String @db.Text // Markdown procedure
+  triggerPhrases String[] @default([]) // Phrases that activate this skill
+  source String @default("user_correction") // user_correction | experience_review | manual
+  // Taint tracking (provenance)
+  origin String @default("trusted") // trusted | untrusted
+  useCount Int @default(0)
+  lastUsedAt DateTime?
+  status String @default("active") // active | pending | quarantined | archived
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([userId, useCount])
+}
+
+// ──────────────────────────────────────────────
+// Secret — encrypted user secrets (API keys, tokens, credentials)
+// AES-256-GCM encryption with per-user key derived from JWT_SECRET
+// ──────────────────────────────────────────────
+model Secret {
+  id String @id @default(cuid())
+  name String // Logical name, e.g. "OPENAI_API_KEY", "github_token"
+  description String? // Optional context for the user
+  // Encrypted payload (base64-encoded ciphertext)
+  ciphertext String @db.Text
+  iv String // Initialization vector
+  authTag String // GCM authentication tag
+  keyVersion Int @default(1) // For key rotation
+  // Metadata (NOT encrypted)
+  service String? // e.g. "openai", "github", "stripe"
+  tags String[] @default([])
+  lastUsedAt DateTime?
+  expiresAt DateTime?
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([userId, service])
+}
+
+// ──────────────────────────────────────────────
+// DreamDiary — dream consolidation logs (per-sweep summary)
+// OpenClaw DREAMS.md equivalent
+// ──────────────────────────────────────────────
+model DreamDiary {
+  id String @id @default(cuid())
+  date String // YYYY-MM-DD
+  phase String // light | rem | deep
+  summary String @db.Text
+  promoted Int @default(0)
+  merged Int @default(0)
+  superseded Int @default(0)
+  // Snapshot of changes
+  changes Json @default("[]") // Array of {path, action, content}
+  userId String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, date])
+  @@index([userId, phase])
 }
 
 // ──────────────────────────────────────────────

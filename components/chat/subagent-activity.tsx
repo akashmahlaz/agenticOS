@@ -15,10 +15,13 @@ import {
   WrenchIcon,
   BookOpenIcon,
   CompassIcon,
+  TerminalIcon,
+  UserIcon,
+  KeyIcon,
 } from "lucide-react";
 
 interface SubAgentEvent {
-  agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst" | "browser" | "knowledge";
+  agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst" | "browser" | "knowledge" | "operator";
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
   message: string;
@@ -62,6 +65,12 @@ const AGENT_META: Record<
     color: "text-accent-foreground",
     bg: "bg-accent/20 border-accent/40",
   },
+  operator: {
+    name: "Operator",
+    icon: TerminalIcon,
+    color: "text-warning",
+    bg: "bg-warning/10 border-warning/20",
+  },
   writer: {
     name: "Writer",
     icon: PenIcon,
@@ -92,6 +101,12 @@ const TOOL_ICONS: Record<string, React.ElementType> = {
   list_documents: BookOpenIcon,
   get_document: BookOpenIcon,
   delete_document: BookOpenIcon,
+  run_command: TerminalIcon,
+  check_command: TerminalIcon,
+  secret_list: KeyIcon,
+  secret_get: KeyIcon,
+  secret_save: KeyIcon,
+  secret_delete: KeyIcon,
 };
 
 export default function SubAgentActivity({
