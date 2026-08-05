@@ -67,6 +67,7 @@ import {
   ImageIcon,
   CodeIcon,
   StopCircleIcon,
+  ArrowUpIcon,
 } from "lucide-react";
 
 // ──────────────────────────────────────────────
@@ -352,7 +353,7 @@ function EmptyState({ onSuggestion, userName }: { onSuggestion: (text: string) =
           <button
             key={s.text}
             onClick={() => onSuggestion(s.text)}
-            className="group flex items-center gap-2 px-4 py-2.5 rounded-full border border-border/60 bg-card/60 backdrop-blur-sm hover:bg-card hover:border-foreground/20 transition-all text-sm"
+            className="group flex items-center gap-2 px-4 py-2.5 rounded-full border border-foreground/10 bg-input-elevated hover:border-foreground/20 transition-all text-sm shadow-sm"
           >
             <s.icon size={14} className={s.color} />
             <span className="text-foreground/80 group-hover:text-foreground">{s.text}</span>
@@ -672,8 +673,8 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      {/* Top bar — Gemini-style */}
-      <header className="flex items-center justify-between px-3 md:px-5 h-12 border-b border-border flex-shrink-0 bg-background/95 backdrop-blur-md z-20">
+      {/* Top bar — fixed on mobile, flex on desktop, no visible border line */}
+      <header className="fixed md:relative top-0 left-0 right-0 md:top-auto md:left-auto md:right-auto z-40 flex items-center justify-between px-3 md:px-5 h-12 flex-shrink-0 bg-background/90 backdrop-blur-md">
         <div className="flex items-center gap-2 min-w-0">
           {onMenuClick && (
             <button
@@ -722,7 +723,7 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
       </header>
 
       {/* Conversation — scrollable only this area, input is fixed to viewport on mobile */}
-      <div className="flex-1 overflow-y-auto relative pb-32 md:pb-4">
+      <div className="flex-1 overflow-y-auto relative pt-12 md:pt-0 pb-32 md:pb-4">
         {messages.length === 0 && !loading ? (
           <EmptyState onSuggestion={handleSendMessage} userName={user?.name?.split(" ")[0]} />
         ) : (
@@ -754,12 +755,10 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
         style={{ paddingBottom: "max(0.6rem, env(safe-area-inset-bottom))" }}
       >
         <div className="max-w-3xl mx-auto">
-          {/* Subtle gradient fade above the input for separation */}
-          <div className="h-4 -mt-4 bg-gradient-to-t from-background to-transparent pointer-events-none" />
           <PromptInput
             onSubmit={handleSubmit as (m: PromptInputMessage) => void}
             disabled={loading}
-            className="relative border border-border/60 bg-card/95 backdrop-blur-xl shadow-[0_2px_24px_-8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_24px_-8px_rgba(0,0,0,0.5)] rounded-[28px] focus-within:border-foreground/20 focus-within:shadow-[0_4px_28px_-8px_rgba(0,0,0,0.18)] dark:focus-within:shadow-[0_4px_28px_-8px_rgba(0,0,0,0.6)] transition-all"
+            className="relative border border-foreground/10 bg-input-elevated shadow-[0_2px_24px_-8px_rgba(0,0,0,0.12)] dark:shadow-[0_4px_28px_-4px_rgba(0,0,0,0.4)] rounded-[28px] transition-shadow"
           >
             <PromptInputHeader />
             <PromptInputBody>
@@ -768,7 +767,7 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
                 onChange={handleTextChange}
                 placeholder="Ask anything…"
                 disabled={loading}
-                className="min-h-12 max-h-40 text-[15px] leading-relaxed placeholder:text-muted-foreground/60 resize-none border-0 bg-transparent px-4 py-3"
+                className="min-h-12 max-h-40 text-[15px] leading-relaxed placeholder:text-muted-foreground/60 resize-none border-0 !bg-transparent !shadow-none !ring-0 px-4 py-3 focus-visible:!outline-none focus-visible:!ring-0"
                 rows={1}
               />
             </PromptInputBody>
@@ -776,7 +775,7 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
               <PromptInputTools className="gap-0.5">
                 {/* Single + menu groups everything */}
                 <PromptInputActionMenu>
-                  <PromptInputActionMenuTrigger className="h-9 w-9 rounded-full hover:bg-muted text-foreground/80 hover:text-foreground" />
+                  <PromptInputActionMenuTrigger className="h-9 w-9 rounded-full hover:bg-foreground/10 text-foreground/80 hover:text-foreground transition-colors" />
                   <PromptInputActionMenuContent
                     align="start"
                     side="top"
@@ -828,12 +827,14 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
                 )}
               </PromptInputTools>
 
-              {/* Big prominent send button like Gemini/ChatGPT */}
+              {/* Big prominent send button — solid white with up arrow */}
               <PromptInputSubmit
                 disabled={!inputText.trim() || loading}
                 status={loading ? "streaming" : "ready"}
-                className="h-10 w-10 rounded-full bg-foreground text-background hover:bg-foreground/90 disabled:bg-muted disabled:text-muted-foreground shadow-sm transition-all"
-              />
+                className="!h-10 !w-10 !rounded-full !bg-foreground !text-background hover:!bg-foreground/90 disabled:!bg-muted disabled:!text-muted-foreground shadow-sm transition-all [&_svg]:!size-4"
+              >
+                <ArrowUpIcon />
+              </PromptInputSubmit>
             </PromptInputFooter>
           </PromptInput>
 

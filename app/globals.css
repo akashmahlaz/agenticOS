@@ -37,6 +37,10 @@
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
 
+  /* Elevated input — visibly distinct from card so input pops */
+  --color-input-elevated: var(--input-elevated);
+  --color-input-elevated-foreground: var(--input-elevated-foreground);
+
   /* Brand accent tokens — Teal + Coral palette from operon */
   --color-teal: var(--teal);
   --color-teal-light: var(--teal-light);
@@ -70,6 +74,10 @@
 
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.18 0.005 80);
+
+  /* Elevated input — clearly distinct from page bg in both modes */
+  --input-elevated: oklch(0.97 0.002 80);
+  --input-elevated-foreground: oklch(0.18 0.005 80);
 
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.18 0.005 80);
@@ -125,6 +133,10 @@
 
   --card: oklch(0.19 0.003 80);
   --card-foreground: oklch(0.96 0.002 80);
+
+  /* Elevated input — clearly distinct from page bg (0.16) and card (0.19) */
+  --input-elevated: oklch(0.25 0.003 80);
+  --input-elevated-foreground: oklch(0.96 0.002 80);
 
   --popover: oklch(0.21 0.003 80);
   --popover-foreground: oklch(0.96 0.002 80);
