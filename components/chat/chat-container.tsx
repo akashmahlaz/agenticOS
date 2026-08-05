@@ -72,6 +72,7 @@ import {
   ShareIcon,
   CopyIcon,
   MessageCircleDashedIcon,
+  XIcon,
 } from "lucide-react";
 
 // ──────────────────────────────────────────────
@@ -330,6 +331,48 @@ const PROMPT_SUGGESTIONS = [
   { icon: SparklesIcon, text: "Plan a project", color: "text-success" },
 ];
 
+// Ghost mode empty state — when isTempMode is true
+function GhostEmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-4 -mt-12">
+      {/* Ghost emoji-style animated icon */}
+      <div className="relative mb-6">
+        <div className="w-20 h-20 rounded-3xl flex items-center justify-center shadow-2xl shadow-teal/10">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M12 2C7.58 2 4 5.58 4 10v6c0 1.1.9 2 2 2h1v3l3-3h4c4.42 0 8-3.58 8-8s-3.58-8-8-8z"
+              fill="currentColor"
+              className="text-teal/80"
+            />
+            <circle cx="9" cy="10" r="1.2" fill="oklch(0.16 0.003 80)" className="dark:fill-background" />
+            <circle cx="15" cy="10" r="1.2" fill="oklch(0.16 0.003 80)" className="dark:fill-background" />
+            <path
+              d="M9 13.5c.5 1 1.5 1.5 3 1.5s2.5-.5 3-1.5"
+              stroke="oklch(0.16 0.003 80)"
+              className="dark:stroke-background"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
+        {/* Subtle glow */}
+        <div
+          className="absolute inset-0 rounded-3xl blur-2xl opacity-20 -z-10"
+          style={{ background: "radial-gradient(circle, oklch(0.7 0.13 195) 0%, transparent 70%)" }}
+        />
+      </div>
+
+      {/* Greeting */}
+      <h1 className="text-3xl md:text-4xl font-medium tracking-tight font-space-grotesk text-center mb-2">
+        Just stopping by?
+      </h1>
+      <p className="text-sm md:text-[15px] text-muted-foreground/80 text-center font-light max-w-md leading-relaxed">
+        <u className="decoration-muted-foreground/40">Temporary chats</u> don't appear in recent chats and aren't used to improve agenticOS. Stored for 72 hours for safety.
+      </p>
+    </div>
+  );
+}
+
 function EmptyState({ onSuggestion, userName }: { onSuggestion: (text: string) => void; userName?: string }) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-4 -mt-8">
@@ -392,9 +435,19 @@ interface ChatContainerProps {
   initialSessionId?: string | null;
   onSessionCreated?: (id: string) => void;
   onMenuClick?: () => void;
+  isTempMode?: boolean;
+  onExitTemp?: () => void;
+  onStartTemp?: () => void;
 }
 
-export default function ChatContainer({ initialSessionId, onSessionCreated, onMenuClick }: ChatContainerProps) {
+export default function ChatContainer({
+  initialSessionId,
+  onSessionCreated,
+  onMenuClick,
+  isTempMode,
+  onExitTemp,
+  onStartTemp,
+}: ChatContainerProps) {
   const { token, user } = useAuth();
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -406,6 +459,13 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [isTemporary, setIsTemporary] = useState(false);
+
+  // Sync temp mode from prop
+  useEffect(() => {
+    if (isTempMode !== undefined) {
+      setIsTemporary(isTempMode);
+    }
+  }, [isTempMode]);
   const [isShared, setIsShared] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [topMenuOpen, setTopMenuOpen] = useState(false);
@@ -758,38 +818,46 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
         </div>
 
         <div className="flex items-center gap-1">
-          {/* Temporary chat toggle — dashed bubble like ChatGPT */}
-          <button
-            onClick={() => setIsTemporary((v) => !v)}
-            className={`h-8 w-8 rounded-full flex items-center justify-center transition-colors ${
-              isTemporary
-                ? "bg-teal/15 text-teal border border-teal/30"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-            }`}
-            aria-label="Toggle temporary chat"
-            title={isTemporary ? "Temporary chat ON" : "Turn on temporary chat"}
-          >
-            {isTemporary ? (
-              <MessageCircleDashedIcon size={16} className="fill-current" />
-            ) : (
-              <MessageCircleDashedIcon size={16} />
-            )}
-          </button>
-
-          {/* Share button */}
-          {sessionId && (
+          {/* In temp mode: show X button to exit */}
+          {isTempMode ? (
             <button
-              onClick={toggleShare}
-              className={`h-8 w-8 rounded-full flex items-center justify-center transition-colors ${
-                isShared
-                  ? "bg-teal/15 text-teal border border-teal/30"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-              }`}
-              aria-label="Share chat"
-              title={isShared ? "Shared (click to copy link)" : "Share chat"}
+              onClick={onExitTemp}
+              className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              aria-label="Close temporary chat"
+              title="Close temporary chat"
             >
-              {isShared ? <CheckIcon size={14} /> : <ShareIcon size={14} />}
+              <XIcon size={16} />
             </button>
+          ) : (
+            <>
+              {/* Temporary chat button — starts a new temp session */}
+              {onStartTemp && !isTempMode && (
+                <button
+                  onClick={onStartTemp}
+                  className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                  aria-label="Start temporary chat"
+                  title="Temporary chat"
+                >
+                  <MessageCircleDashedIcon size={16} />
+                </button>
+              )}
+
+              {/* Share button */}
+              {sessionId && (
+                <button
+                  onClick={toggleShare}
+                  className={`h-8 w-8 rounded-full flex items-center justify-center transition-colors ${
+                    isShared
+                      ? "bg-teal/15 text-teal border border-teal/30"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                  }`}
+                  aria-label="Share chat"
+                  title={isShared ? "Shared (click to copy link)" : "Share chat"}
+                >
+                  {isShared ? <CheckIcon size={14} /> : <ShareIcon size={14} />}
+                </button>
+              )}
+            </>
           )}
 
           {/* Status pill */}
@@ -829,7 +897,11 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
         style={isShared ? { paddingTop: "calc(48px + 36px)" } : undefined}
       >
         {messages.length === 0 && !loading ? (
-          <EmptyState onSuggestion={handleSendMessage} userName={user?.name?.split(" ")[0]} />
+          isTempMode ? (
+            <GhostEmptyState />
+          ) : (
+            <EmptyState onSuggestion={handleSendMessage} userName={user?.name?.split(" ")[0]} />
+          )
         ) : (
           <Conversation className="h-full">
             <ConversationContent className="p-3 md:p-5 space-y-5 max-w-3xl mx-auto w-full">

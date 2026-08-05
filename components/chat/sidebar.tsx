@@ -23,6 +23,17 @@ const MessageIcon = ({ size = 16 }: { size?: number }) => (
     />
   </svg>
 );
+const MessageCircleDashedIcon = ({ size = 16 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <path
+      d="M2 12C2 6.477 6.477 2 12 2M22 12C22 17.523 17.523 22 12 22M4.93 4.93C3.547 6.314 2.665 8.066 2.273 9.95M19.07 4.93C20.453 6.314 21.335 8.066 21.727 9.95M2.273 14.05C2.665 15.934 3.547 17.686 4.93 19.07M21.727 14.05C21.335 15.934 20.453 17.686 19.07 19.07M9 11.5h.01M15 11.5h.01M9 14.5c.5 1 1.5 1.5 3 1.5s2.5-.5 3-1.5"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
 const TrashIcon = ({ size = 14 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
     <path
@@ -136,12 +147,16 @@ function SessionList({
   activeSessionId,
   onSelectSession,
   onNewChat,
+  onStartTemp,
+  isTempMode,
   onDelete,
   refreshKey,
 }: {
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   onNewChat: () => void;
+  onStartTemp?: () => void;
+  isTempMode?: boolean;
   onDelete: (id: string) => void;
   refreshKey: number;
 }) {
@@ -190,6 +205,20 @@ function SessionList({
         <PlusIcon size={15} />
         <span>New Chat</span>
       </button>
+
+      {onStartTemp && (
+        <button
+          onClick={onStartTemp}
+          className={`mt-2 w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors border ${
+            isTempMode
+              ? "bg-teal/15 border-teal/30 text-teal"
+              : "bg-card/40 hover:bg-muted/60 border-border text-foreground/80"
+          }`}
+        >
+          <MessageCircleDashedIcon size={15} />
+          <span>Temporary chat</span>
+        </button>
+      )}
 
       {loading ? (
         <div className="text-xs text-muted-foreground px-3 py-4 text-center">Loading…</div>
@@ -423,7 +452,9 @@ interface SidebarProps {
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   onNewChat: () => void;
+  onStartTemp?: () => void;
   onClose?: () => void;
+  isTempMode?: boolean;
   refreshKey: number;
 }
 
@@ -431,7 +462,9 @@ export default function Sidebar({
   activeSessionId,
   onSelectSession,
   onNewChat,
+  onStartTemp,
   onClose,
+  isTempMode,
   refreshKey,
 }: SidebarProps) {
   const { token } = useAuth();
@@ -485,6 +518,8 @@ export default function Sidebar({
           onClose?.();
         }}
         onNewChat={onNewChat}
+        onStartTemp={onStartTemp}
+        isTempMode={isTempMode}
         onDelete={handleDelete}
         refreshKey={refreshKey}
       />

@@ -50,11 +50,10 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     if (typeof body.model === "string") updateData.model = body.model;
     if (typeof body.isShared === "boolean") {
       updateData.isShared = body.isShared;
-      if (body.isShared && !session.shareToken) {
-        // Generate a unique share token
-        updateData.shareToken = randomBytes(8).toString("hex");
-      }
-      if (!body.isShared) {
+      if (body.isShared) {
+        // Generate a fresh 32-char token (or reuse existing) — secure + URL-safe
+        updateData.shareToken = session.shareToken || randomBytes(16).toString("hex");
+      } else {
         updateData.shareToken = null;
       }
     }
@@ -63,6 +62,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
       where: { id },
       data: updateData,
     });
+    console.log(`[session] PATCH ${id}: isShared=${updated.isShared} shareToken=${updated.shareToken?.slice(0, 8)}…`);
     return NextResponse.json(updated);
   } catch (err) {
     console.error("[session] PATCH error:", err);

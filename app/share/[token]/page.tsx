@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeftIcon, ShareIcon, BoxIcon } from "lucide-react";
+import { ArrowLeftIcon, ShareIcon, BoxIcon, SparklesIcon } from "lucide-react";
 
 interface PageProps {
   params: Promise<{ token: string }>;
@@ -13,27 +13,44 @@ export const dynamic = "force-dynamic";
 
 export default async function SharedChatPage({ params }: PageProps) {
   const { token } = await params;
-  const session = await db.session.findFirst({
-    where: { shareToken: token, isShared: true },
-    include: {
-      user: { select: { name: true } },
-      messages: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          role: true,
-          content: true,
-          createdAt: true,
+
+  // Validate token format (32 hex chars or similar)
+  if (!token || token.length < 8 || token.length > 128) {
+    notFound();
+  }
+
+  let session;
+  try {
+    session = await db.session.findFirst({
+      where: { shareToken: token, isShared: true },
+      include: {
+        user: { select: { name: true } },
+        messages: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            role: true,
+            content: true,
+            createdAt: true,
+          },
         },
       },
-    },
-  });
+    });
+  } catch (err) {
+    console.error("[share] DB error:", err);
+    notFound();
+  }
 
   if (!session) {
     notFound();
   }
 
   const userName = session.user?.name?.split(" ")[0] || "Someone";
+  const formattedDate = new Date(session.createdAt).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -45,22 +62,22 @@ export default async function SharedChatPage({ params }: PageProps) {
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeftIcon size={14} />
-            <span>agenticOS</span>
+            <span className="font-space-grotesk font-medium">agenticOS</span>
           </Link>
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-teal/10 border border-teal/20 text-[10px] text-teal">
             <ShareIcon size={11} />
-            <span>Shared chat</span>
+            <span className="font-medium">Shared chat</span>
           </div>
         </div>
       </header>
 
       {/* Header */}
-      <div className="max-w-3xl mx-auto px-3 md:px-5 py-8">
+      <div className="max-w-3xl mx-auto px-3 md:px-5 py-8 md:py-12">
         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight font-space-grotesk">
           {session.title}
         </h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Shared by {userName} · {new Date(session.createdAt).toLocaleDateString()}
+          Shared by {userName} · {formattedDate}
         </p>
       </div>
 
@@ -77,7 +94,7 @@ export default async function SharedChatPage({ params }: PageProps) {
               key={m.id}
               className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}
             >
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5 px-1">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5 px-1 font-medium">
                 {m.role === "user" ? userName : "agenticOS"}
               </div>
               <div
@@ -100,7 +117,7 @@ export default async function SharedChatPage({ params }: PageProps) {
           href="/"
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
-          <BoxIcon size={12} />
+          <SparklesIcon size={12} className="text-teal" />
           Try agenticOS
         </Link>
       </footer>

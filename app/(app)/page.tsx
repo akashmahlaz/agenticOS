@@ -10,18 +10,22 @@ function AppPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlId = searchParams.get("id") || undefined;
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(urlId || null);
+  const isTempFromUrl = searchParams.get("temporary-chat") === "true";
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(
+    isTempFromUrl ? null : urlId || null
+  );
   const [refreshKey, setRefreshKey] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   // Sync URL -> state
   useEffect(() => {
-    if (urlId !== activeSessionId) {
-      setActiveSessionId(urlId || null);
+    const target = isTempFromUrl ? null : urlId || null;
+    if (target !== activeSessionId) {
+      setActiveSessionId(target);
       setRefreshKey((k) => k + 1);
     }
-  }, [urlId, activeSessionId]);
+  }, [urlId, isTempFromUrl, activeSessionId]);
 
   // Detect mobile
   useEffect(() => {
@@ -63,10 +67,28 @@ function AppPageInner() {
   const handleSessionCreated = useCallback(
     (id: string) => {
       setActiveSessionId(id);
-      router.push(`/?id=${id}`);
+      if (isTempFromUrl) {
+        router.push(`/?temporary-chat=true`);
+      } else {
+        router.push(`/?id=${id}`);
+      }
     },
-    [router]
+    [router, isTempFromUrl]
   );
+
+  const handleStartTemp = useCallback(() => {
+    setActiveSessionId(null);
+    setRefreshKey((k) => k + 1);
+    setDrawerOpen(false);
+    router.push("/?temporary-chat=true");
+  }, [router]);
+
+  const handleExitTemp = useCallback(() => {
+    setActiveSessionId(null);
+    setRefreshKey((k) => k + 1);
+    setDrawerOpen(false);
+    router.push("/");
+  }, [router]);
 
   return (
     <AuthGate>
@@ -77,6 +99,8 @@ function AppPageInner() {
             activeSessionId={activeSessionId}
             onSelectSession={handleSelectSession}
             onNewChat={handleNewChat}
+            onStartTemp={handleStartTemp}
+            isTempMode={isTempFromUrl}
             refreshKey={refreshKey}
           />
         </div>
@@ -99,7 +123,9 @@ function AppPageInner() {
             activeSessionId={activeSessionId}
             onSelectSession={handleSelectSession}
             onNewChat={handleNewChat}
+            onStartTemp={handleStartTemp}
             onClose={() => setDrawerOpen(false)}
+            isTempMode={isTempFromUrl}
             refreshKey={refreshKey}
           />
         </div>
@@ -111,6 +137,9 @@ function AppPageInner() {
               initialSessionId={activeSessionId}
               onSessionCreated={handleSessionCreated}
               onMenuClick={() => setDrawerOpen(true)}
+              isTempMode={isTempFromUrl}
+              onExitTemp={handleExitTemp}
+              onStartTemp={handleStartTemp}
             />
           </div>
         </div>
