@@ -14,10 +14,11 @@ import {
   GlobeIcon,
   WrenchIcon,
   BookOpenIcon,
+  CompassIcon,
 } from "lucide-react";
 
 interface SubAgentEvent {
-  agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst";
+  agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst" | "browser";
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
   message: string;
@@ -49,6 +50,12 @@ const AGENT_META: Record<
     color: "text-primary",
     bg: "bg-primary/10 border-primary/20",
   },
+  browser: {
+    name: "Browser",
+    icon: CompassIcon,
+    color: "text-info",
+    bg: "bg-info/10 border-info/20",
+  },
   writer: {
     name: "Writer",
     icon: PenIcon,
@@ -71,6 +78,9 @@ const TOOL_ICONS: Record<string, React.ElementType> = {
   memorySearch: BookOpenIcon,
   memoryGet: BookOpenIcon,
   memoryWrite: BookOpenIcon,
+  search_web: SearchIcon,
+  browse_website: GlobeIcon,
+  extract_links: GlobeIcon,
 };
 
 export default function SubAgentActivity({

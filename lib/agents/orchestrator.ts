@@ -7,17 +7,19 @@ import { z } from "zod";
 import { runResearcher } from "./researcher";
 import { runCoder } from "./coder";
 import { runMemoryKeeper } from "./memory-keeper";
+import { runBrowser } from "./browser";
 import type { SubAgentId } from "./types";
 
 // Re-export sub-agent runners
 export { runResearcher } from "./researcher";
 export { runCoder } from "./coder";
 export { runMemoryKeeper } from "./memory-keeper";
+export { runBrowser } from "./browser";
 
 // Progress event type — matches the existing chat-container event types
 export interface SubAgentProgressEvent {
   type: "subagent";
-  agent: SubAgentId;
+  agent: SubAgentId | "browser";
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
   message: string;
@@ -196,6 +198,55 @@ export const subAgentTools: any = {
       });
       return {
         agent: "memory-keeper",
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        durationMs: result.durationMs,
+      };
+    },
+  }),
+
+  delegateToBrowser: tool({
+    description:
+      "Delegate a web browsing task to the Browser sub-agent. Use this for: searching the web, fetching specific URLs, extracting content from webpages, or following links. The sub-agent has access to web search (DuckDuckGo, no API key) and URL fetching with HTML cleaning.",
+    parameters: zodSchema(
+      z.object({
+        task: z.string().describe("What to search for, fetch, or extract from the web"),
+        context: z.string().optional().describe("Additional context to guide the browsing"),
+      })
+    ),
+    execute: async (input: { task: string; context?: string }) => {
+      emit({
+        type: "subagent",
+        agent: "browser" as any,
+        task: input.task,
+        status: "started",
+        message: `Browser delegated: ${input.task}`,
+      });
+      const result = await runBrowser({
+        task: input.task,
+        context: input.context,
+        onProgress: (p) =>
+          emit({
+            type: "subagent",
+            agent: "browser" as any,
+            task: input.task,
+            status: p.type,
+            message: p.message,
+            toolName: p.toolName,
+          }),
+      });
+      emit({
+        type: "subagent",
+        agent: "browser" as any,
+        task: input.task,
+        status: result.success ? "done" : "error",
+        message: result.success ? "Browsing complete" : `Error: ${result.error}`,
+        result: result.output,
+        durationMs: result.durationMs,
+      });
+      return {
+        agent: "browser",
         success: result.success,
         output: result.output,
         error: result.error,

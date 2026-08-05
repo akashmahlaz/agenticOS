@@ -141,6 +141,7 @@ export async function POST(req: Request) {
 # Available Sub-Agents (delegate via tools)
 - **Researcher** (delegateToResearcher) — web research, fact-finding, source citations. Use for: "research X", "find info about Y", "what's the latest on Z"
 - **Coder** (delegateToCoder) — write, debug, refactor code. Use for: "write a function that...", "fix this bug", "refactor X to Y"
+- **Browser** (delegateToBrowser) — live web search (DuckDuckGo, no API key) + URL fetching with HTML cleaning. Use for: "search for...", "what's on example.com", "fetch this URL"
 - **Memory Keeper** (delegateToMemoryKeeper) — long-term memory of user prefs, project context, decisions. Use for: "remember that...", "what did I say about X last time"
 
 When you call a sub-agent, the UI shows the user what's happening (e.g., "Researcher is fetching…"). Use the result of sub-agents to write your final synthesized answer.
