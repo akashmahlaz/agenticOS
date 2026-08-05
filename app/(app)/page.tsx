@@ -18,12 +18,11 @@ function AppPageInner() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Sync URL -> state
+  // Sync URL -> state (NO remount — handled by ChatContainer's internal effect)
   useEffect(() => {
     const target = isTempFromUrl ? null : urlId || null;
     if (target !== activeSessionId) {
       setActiveSessionId(target);
-      setRefreshKey((k) => k + 1);
     }
   }, [urlId, isTempFromUrl, activeSessionId]);
 
@@ -64,13 +63,16 @@ function AppPageInner() {
     [router]
   );
 
+  // Session creation — only update URL, do NOT remount or refresh.
+  // The ChatContainer manages its own state and will keep the streaming
+  // response intact while updating the URL in the background.
   const handleSessionCreated = useCallback(
     (id: string) => {
       setActiveSessionId(id);
       if (isTempFromUrl) {
-        router.push(`/?temporary-chat=true`);
+        router.replace(`/?temporary-chat=true`);
       } else {
-        router.push(`/?id=${id}`);
+        router.replace(`/?id=${id}`);
       }
     },
     [router, isTempFromUrl]
@@ -130,18 +132,17 @@ function AppPageInner() {
           />
         </div>
 
-        {/* Main content */}
+        {/* Main content — no key remount, ChatContainer handles session state internally */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div key={refreshKey} className="flex-1 flex flex-col overflow-hidden">
-            <ChatContainer
-              initialSessionId={activeSessionId}
-              onSessionCreated={handleSessionCreated}
-              onMenuClick={() => setDrawerOpen(true)}
-              isTempMode={isTempFromUrl}
-              onExitTemp={handleExitTemp}
-              onStartTemp={handleStartTemp}
-            />
-          </div>
+          <ChatContainer
+            initialSessionId={activeSessionId}
+            onSessionCreated={handleSessionCreated}
+            onMenuClick={() => setDrawerOpen(true)}
+            isTempMode={isTempFromUrl}
+            onExitTemp={handleExitTemp}
+            onStartTemp={handleStartTemp}
+            refreshKey={refreshKey}
+          />
         </div>
       </div>
     </AuthGate>

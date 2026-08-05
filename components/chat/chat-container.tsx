@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/app/(app)/layout";
 import MessageActionBar from "@/components/chat/message-action-bar";
 import SubAgentActivity from "@/components/chat/subagent-activity";
@@ -456,6 +456,7 @@ interface ChatContainerProps {
   isTempMode?: boolean;
   onExitTemp?: () => void;
   onStartTemp?: () => void;
+  refreshKey?: number;
 }
 
 export default function ChatContainer({
@@ -465,6 +466,7 @@ export default function ChatContainer({
   isTempMode,
   onExitTemp,
   onStartTemp,
+  refreshKey: externalRefreshKey,
 }: ChatContainerProps) {
   const { token, user } = useAuth();
   const [messages, setMessages] = useState<MessageData[]>([]);
@@ -472,6 +474,12 @@ export default function ChatContainer({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [model, setModel] = useState("MiniMax-M2");
+  // Track which session we just created ourselves so the load effect doesn't
+  // fetch from DB and wipe the in-memory messages we're about to stream.
+  const justCreatedSessionRef = useRef<string | null>(null);
+  // Track which session we last loaded from DB (so we don't reload on every
+  // prop ping)
+  const lastLoadedSessionRef = useRef<string | null | undefined>(undefined);
   const [refreshKey, setRefreshKey] = useState(0);
   const [inputText, setInputText] = useState("");
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
@@ -502,10 +510,16 @@ export default function ChatContainer({
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ title: "New Chat", isTemporary }),
     });
+    if (!res.ok) {
+      throw new Error("Failed to create session");
+    }
     const data = await res.json();
+    // Mark this session as just-created so the load effect below
+    // doesn't try to re-fetch it from DB (which would wipe our messages).
+    justCreatedSessionRef.current = data.id;
+    lastLoadedSessionRef.current = data.id;
     setSessionId(data.id);
     onSessionCreated?.(data.id);
-    setMessages([]);
     setRefreshKey((k) => k + 1);
     return data.id;
   }, [token, onSessionCreated, isTemporary]);
@@ -565,14 +579,50 @@ export default function ChatContainer({
     [token]
   );
 
-  // Load initial session
+  // Load initial session — only on real session changes (not on every render)
   useEffect(() => {
-    if (initialSessionId) loadSession(initialSessionId);
-    else {
+    // Nothing to do if no session selected
+    if (!initialSessionId) {
+      // Only clear if we were showing a different session
+      if (lastLoadedSessionRef.current !== null) {
+        lastLoadedSessionRef.current = null;
+        justCreatedSessionRef.current = null;
+        setSessionId(null);
+        setMessages([]);
+      }
+      return;
+    }
+
+    // Skip if we already loaded this session
+    if (lastLoadedSessionRef.current === initialSessionId) return;
+
+    // Skip if we just created this session ourselves (don't refetch from DB,
+    // we already have the messages we're about to stream)
+    if (justCreatedSessionRef.current === initialSessionId) {
+      lastLoadedSessionRef.current = initialSessionId;
+      // Clear the flag so a future navigation to this same id will reload
+      justCreatedSessionRef.current = null;
+      return;
+    }
+
+    // Otherwise, this is a real session switch — load it from DB
+    lastLoadedSessionRef.current = initialSessionId;
+    loadSession(initialSessionId);
+  }, [initialSessionId, loadSession]);
+
+  // External refresh (e.g. New Chat clicked in sidebar) — full reset
+  useEffect(() => {
+    if (externalRefreshKey === undefined) return;
+    // Bump the local refresh trigger to make sure sidebar reloads
+    setRefreshKey(externalRefreshKey);
+    // Invalidate the lastLoadedSession so the load effect re-evaluates
+    if (initialSessionId === null || initialSessionId === undefined) {
+      lastLoadedSessionRef.current = null;
+      justCreatedSessionRef.current = null;
       setSessionId(null);
       setMessages([]);
     }
-  }, [initialSessionId, loadSession]);
+  }, [externalRefreshKey, initialSessionId]);
 
   // Listen to session refresh events
   useEffect(() => {
