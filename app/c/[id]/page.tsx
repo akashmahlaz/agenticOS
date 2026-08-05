@@ -1,17 +1,52 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/chat/sidebar";
 import ChatContainer from "@/components/chat/chat-container";
 import AuthGate from "@/components/auth-gate";
 
-export default function AppPage() {
+interface PageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default function ChatPage({ params }: PageProps) {
+  const { id } = use(params);
   const router = useRouter();
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(id);
   const [refreshKey, setRefreshKey] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Verify session exists
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/sessions/${id}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("agenticos-token") || ""}` },
+        });
+        if (!res.ok) {
+          if (!cancelled) {
+            router.replace("/");
+          }
+          return;
+        }
+        if (!cancelled) setLoading(false);
+      } catch {
+        if (!cancelled) router.replace("/");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, router]);
+
+  // Update session id if URL param changes
+  useEffect(() => {
+    setActiveSessionId(id);
+  }, [id]);
 
   // Detect mobile
   useEffect(() => {
@@ -41,22 +76,30 @@ export default function AppPage() {
   }, [router]);
 
   const handleSelectSession = useCallback(
-    (id: string) => {
-      setActiveSessionId(id);
+    (newId: string) => {
+      setActiveSessionId(newId);
       setRefreshKey((k) => k + 1);
       setDrawerOpen(false);
-      router.push(`/c/${id}`);
+      router.push(`/c/${newId}`);
     },
     [router]
   );
 
   const handleSessionCreated = useCallback(
-    (id: string) => {
-      setActiveSessionId(id);
-      router.push(`/c/${id}`);
+    (newId: string) => {
+      setActiveSessionId(newId);
+      router.push(`/c/${newId}`);
     },
     [router]
   );
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground animate-pulse">Loading chat…</div>
+      </div>
+    );
+  }
 
   return (
     <AuthGate>

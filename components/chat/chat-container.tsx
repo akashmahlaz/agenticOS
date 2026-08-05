@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/app/(app)/layout";
+import MessageActionBar from "@/components/chat/message-action-bar";
 
 // ──────────────────────────────────────────────
 // AI Elements
@@ -68,6 +69,9 @@ import {
   CodeIcon,
   StopCircleIcon,
   ArrowUpIcon,
+  ShareIcon,
+  CopyIcon,
+  MessageCircleDashedIcon,
 } from "lucide-react";
 
 // ──────────────────────────────────────────────
@@ -293,6 +297,23 @@ function MessageBubble({ msg, isStreaming }: { msg: MessageData; isStreaming?: b
         ) : isStreaming ? (
           <Shimmer duration={1}>Thinking…</Shimmer>
         ) : null}
+
+        {/* Action bar (only for AI messages with content, not while streaming) */}
+        {!isUser && msg.content && !isStreaming && (
+          <MessageActionBar
+            messageId={msg.id}
+            content={msg.content}
+            onRegenerate={
+              isStreaming
+                ? undefined
+                : () => {
+                    // For now, regenerate just re-sends the last user message
+                    // (a real implementation would call the API to regenerate)
+                    console.log("Regenerate requested for", msg.id);
+                  }
+            }
+          />
+        )}
       </MessageContent>
     </Message>
   );
@@ -384,6 +405,10 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
   const [inputText, setInputText] = useState("");
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [useWebSearch, setUseWebSearch] = useState(false);
+  const [isTemporary, setIsTemporary] = useState(false);
+  const [isShared, setIsShared] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [topMenuOpen, setTopMenuOpen] = useState(false);
 
   const handleTextChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -397,7 +422,7 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
     const res = await fetch("/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ title: "New Chat" }),
+      body: JSON.stringify({ title: "New Chat", isTemporary }),
     });
     const data = await res.json();
     setSessionId(data.id);
@@ -405,7 +430,24 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
     setMessages([]);
     setRefreshKey((k) => k + 1);
     return data.id;
-  }, [token, onSessionCreated]);
+  }, [token, onSessionCreated, isTemporary]);
+
+  // Toggle share
+  const toggleShare = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ isShared: !isShared }),
+      });
+      const data = await res.json();
+      setIsShared(data.isShared);
+      setShareToken(data.shareToken);
+    } catch (err) {
+      console.error("Share toggle failed", err);
+    }
+  }, [sessionId, token, isShared]);
 
   // Load session messages
   const loadSession = useCallback(
@@ -418,6 +460,9 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
+        if (data.isShared !== undefined) setIsShared(data.isShared);
+        if (data.shareToken !== undefined) setShareToken(data.shareToken);
+        if (data.isTemporary !== undefined) setIsTemporary(data.isTemporary);
         if (data.messages) {
           setMessages(
             data.messages.map((m: Record<string, unknown>) => ({
@@ -712,18 +757,77 @@ export default function ChatContainer({ initialSessionId, onSessionCreated, onMe
           </ModelSelector>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-secondary/50">
+        <div className="flex items-center gap-1">
+          {/* Temporary chat toggle — dashed bubble like ChatGPT */}
+          <button
+            onClick={() => setIsTemporary((v) => !v)}
+            className={`h-8 w-8 rounded-full flex items-center justify-center transition-colors ${
+              isTemporary
+                ? "bg-teal/15 text-teal border border-teal/30"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+            }`}
+            aria-label="Toggle temporary chat"
+            title={isTemporary ? "Temporary chat ON" : "Turn on temporary chat"}
+          >
+            {isTemporary ? (
+              <MessageCircleDashedIcon size={16} className="fill-current" />
+            ) : (
+              <MessageCircleDashedIcon size={16} />
+            )}
+          </button>
+
+          {/* Share button */}
+          {sessionId && (
+            <button
+              onClick={toggleShare}
+              className={`h-8 w-8 rounded-full flex items-center justify-center transition-colors ${
+                isShared
+                  ? "bg-teal/15 text-teal border border-teal/30"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+              }`}
+              aria-label="Share chat"
+              title={isShared ? "Shared (click to copy link)" : "Share chat"}
+            >
+              {isShared ? <CheckIcon size={14} /> : <ShareIcon size={14} />}
+            </button>
+          )}
+
+          {/* Status pill */}
+          <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full bg-secondary/50">
             <span className={`w-1.5 h-1.5 rounded-full ${isStreaming ? "bg-amber-400 animate-pulse" : "bg-success"}`} />
-            <span className="text-[10px] text-muted-foreground hidden sm:inline">
+            <span className="text-[10px] text-muted-foreground">
               {isStreaming ? "Processing" : "Ready"}
             </span>
           </div>
         </div>
       </header>
 
+      {/* Share link banner */}
+      {isShared && shareToken && (
+        <div className="fixed md:relative top-12 md:top-auto left-0 right-0 md:left-auto md:right-auto z-30 px-3 md:px-5 py-2 bg-teal/10 border-b border-teal/20 text-xs text-teal flex items-center justify-between gap-2">
+          <span className="truncate flex-1 font-mono text-[11px]">
+            {typeof window !== "undefined" ? window.location.origin : ""}/share/{shareToken}
+          </span>
+          <button
+            onClick={() => {
+              const url = `${window.location.origin}/share/${shareToken}`;
+              navigator.clipboard.writeText(url);
+            }}
+            className="px-2 py-1 rounded bg-teal/20 hover:bg-teal/30 transition-colors flex items-center gap-1"
+          >
+            <CopyIcon size={11} />
+            <span>Copy</span>
+          </button>
+        </div>
+      )}
+
       {/* Conversation — scrollable only this area, input is fixed to viewport on mobile */}
-      <div className="flex-1 overflow-y-auto relative pt-12 md:pt-0 pb-32 md:pb-4">
+      <div
+        className={`flex-1 overflow-y-auto relative pt-12 md:pt-0 pb-44 md:pb-4 ${
+          isShared ? "md:pt-0" : ""
+        }`}
+        style={isShared ? { paddingTop: "calc(48px + 36px)" } : undefined}
+      >
         {messages.length === 0 && !loading ? (
           <EmptyState onSuggestion={handleSendMessage} userName={user?.name?.split(" ")[0]} />
         ) : (

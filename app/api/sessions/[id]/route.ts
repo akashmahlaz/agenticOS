@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getUserIdFromRequest } from "@/lib/auth";
+import { randomBytes } from "crypto";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -20,7 +21,7 @@ export async function GET(req: Request, { params }: RouteParams) {
       include: {
         messages: { orderBy: { createdAt: "asc" }, select: {
           id: true, role: true, content: true, reasoningSteps: true,
-          toolCalls: true, model: true, agent: true, createdAt: true,
+          toolCalls: true, citations: true, model: true, agent: true, createdAt: true,
         }},
       },
     });
@@ -33,20 +34,34 @@ export async function GET(req: Request, { params }: RouteParams) {
   }
 }
 
-// PATCH /api/sessions/[id] — update title
+// PATCH /api/sessions/[id] — update title, share, etc.
 export async function PATCH(req: Request, { params }: RouteParams) {
   try {
     const { id } = await params;
     const userId = getUserIdFromRequest(req);
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { title } = await req.json();
+    const body = await req.json();
     const session = await db.session.findFirst({ where: { id, userId } });
     if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    const updateData: Record<string, unknown> = {};
+    if (typeof body.title === "string") updateData.title = body.title;
+    if (typeof body.model === "string") updateData.model = body.model;
+    if (typeof body.isShared === "boolean") {
+      updateData.isShared = body.isShared;
+      if (body.isShared && !session.shareToken) {
+        // Generate a unique share token
+        updateData.shareToken = randomBytes(8).toString("hex");
+      }
+      if (!body.isShared) {
+        updateData.shareToken = null;
+      }
+    }
+
     const updated = await db.session.update({
       where: { id },
-      data: { title },
+      data: updateData,
     });
     return NextResponse.json(updated);
   } catch (err) {

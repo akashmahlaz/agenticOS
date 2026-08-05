@@ -32,6 +32,16 @@ model Session {
   title  String @default("New Chat")
   model  String @default("MiniMax-M2")
 
+  // Temporary chat: not saved to history, not used for training
+  isTemporary Boolean @default(false)
+
+  // Shareable chat: public read-only URL
+  isShared   Boolean @default(false)
+  shareToken String? @unique
+
+  // Per-message feedback ("up" / "down")
+  feedback  Json @default("{}")
+
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -42,6 +52,7 @@ model Session {
 
   @@index([userId])
   @@index([userId, updatedAt])
+  @@index([shareToken])
 }
 
 // ──────────────────────────────────────────────
