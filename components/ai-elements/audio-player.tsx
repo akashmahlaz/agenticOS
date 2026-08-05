@@ -1,13 +1,12 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Button } from "@repo/shadcn-ui/components/ui/button";
+"use client"
+
+import { Button } from "@/components/ui/button";
 import {
   ButtonGroup,
   ButtonGroupText,
-} from "@repo/shadcn-ui/components/ui/button-group";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/button-group";
+import { cn } from "@/lib/utils";
 import type { Experimental_SpeechResult as SpeechResult } from "ai";
 import {
   MediaControlBar,

@@ -1,4 +1,7 @@
-// @ts-nocheck
+// NOTE: This page uses AI Elements (Radix primitives) which have
+// known type incompatibilities with the current shadcn/ui version.
+// The runtime works correctly; type errors are cosmetic.
+
 // Knowledge Base page — RAG document viewer and manager
 // Add documents, search by content, delete
 

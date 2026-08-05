@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Memory Keeper sub-agent — focused on long-term memory of the user
 // Reads/writes MEMORY.md, USER.md, daily notes (DB-backed via lib/memory/manager)
 // Auto-recall: searches memory before each turn
@@ -99,7 +98,7 @@ export async function runMemoryKeeper(
       tools: {
         memory_search: tool({
           description: "Search the user's memory entries for relevant context.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               query: z.string().describe("What to search for"),
               limit: z.number().optional().describe("Max results (default 10)"),
@@ -120,7 +119,7 @@ export async function runMemoryKeeper(
             return {
               query,
               count: hits.length,
-              entries: hits.map((e) => ({
+              entries: hits.map((e: any) => ({
                 fact: e.fact,
                 provenance: e.provenance,
                 importance: e.importance,
@@ -133,7 +132,7 @@ export async function runMemoryKeeper(
 
         memory_get: tool({
           description: "Read a specific memory file (USER.md, MEMORY.md, IDENTITY.md, SOUL.md).",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               path: z
                 .string()
@@ -170,7 +169,7 @@ export async function runMemoryKeeper(
         memory_save: tool({
           description:
             "Save a new fact to memory with provenance label. Stores in the MemoryEntry table (not a file).",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               fact: z.string().describe("The fact to remember"),
               provenance: z
@@ -219,7 +218,7 @@ export async function runMemoryKeeper(
         memory_write_file: tool({
           description:
             "Overwrite a memory file (USER.md, MEMORY.md, IDENTITY.md, SOUL.md) with new content. Use append_memory_file for incremental updates.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               path: z.string().describe("File path"),
               content: z.string().describe("Full new content"),
@@ -249,7 +248,7 @@ export async function runMemoryKeeper(
 
         append_memory_file: tool({
           description: "Append content to an existing memory file.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               path: z.string().describe("File path"),
               content: z.string().describe("Content to append"),
@@ -277,7 +276,7 @@ export async function runMemoryKeeper(
 
         memory_log_today: tool({
           description: "Log a timestamped entry to today's daily note.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               entry: z.string().describe("The note to log"),
             })
@@ -304,7 +303,7 @@ export async function runMemoryKeeper(
 
         memory_top: tool({
           description: "Get the top N most important memory entries (used for context recall).",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               limit: z.number().optional().describe("Max entries (default 20)"),
             })
@@ -323,7 +322,7 @@ export async function runMemoryKeeper(
             });
             return {
               count: entries.length,
-              entries: entries.map((e) => ({
+              entries: entries.map((e: any) => ({
                 fact: e.fact,
                 provenance: e.provenance,
                 importance: e.importance,
@@ -336,7 +335,7 @@ export async function runMemoryKeeper(
 
         memory_recent_notes: tool({
           description: "Get recent daily notes (last N days).",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               days: z.number().optional().describe("Number of days (default 7)"),
             })
@@ -355,7 +354,7 @@ export async function runMemoryKeeper(
             });
             return {
               count: notes.length,
-              notes: notes.map((n) => ({
+              notes: notes.map((n: any) => ({
                 date: n.date,
                 content: n.content,
                 entryCount: n.entryCount,

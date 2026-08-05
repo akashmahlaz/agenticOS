@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Coder sub-agent — focused on writing, debugging, and refactoring code
 // Has access to: code analysis, sandboxed execution, file diff tools
 // Returns: code blocks with explanations
@@ -60,7 +59,7 @@ export async function runCoder(
       tools: {
         runSnippet: tool({
           description: "Run a small code snippet in a sandboxed JS environment.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               code: z.string().describe("JavaScript code to evaluate"),
             })

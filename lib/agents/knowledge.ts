@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Knowledge sub-agent — RAG over the user's knowledge base
 // Adds documents, searches the knowledge base, retrieves relevant context
 
@@ -82,7 +81,7 @@ export async function runKnowledge(
       tools: {
         add_document: tool({
           description: "Add a new document to the user's knowledge base.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               title: z.string().describe("Document title"),
               content: z.string().describe("Full document content"),
@@ -115,7 +114,7 @@ export async function runKnowledge(
 
         search_knowledge: tool({
           description: "Search the knowledge base for documents relevant to a query.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               query: z.string().describe("The search query"),
               limit: z.number().optional().describe("Max results (default 5)"),
@@ -148,7 +147,7 @@ export async function runKnowledge(
 
         list_documents: tool({
           description: "List all documents in the knowledge base.",
-          parameters: zodSchema(z.object({})),
+          inputSchema: zodSchema(z.object({})),
           execute: async () => {
             opts.onProgress?.({
               type: "tool-call",
@@ -163,7 +162,7 @@ export async function runKnowledge(
             });
             return {
               count: docs.length,
-              documents: docs.map((d) => ({
+              documents: docs.map((d: any) => ({
                 id: d.id,
                 title: d.title,
                 source: d.source,
@@ -178,7 +177,7 @@ export async function runKnowledge(
 
         get_document: tool({
           description: "Get the full content of a specific document by ID.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({ id: z.string().describe("Document ID") })
           ),
           execute: async ({ id }) => {
@@ -210,7 +209,7 @@ export async function runKnowledge(
 
         delete_document: tool({
           description: "Delete a document from the knowledge base.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({ id: z.string().describe("Document ID to delete") })
           ),
           execute: async ({ id }) => {

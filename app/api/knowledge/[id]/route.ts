@@ -1,4 +1,3 @@
-// @ts-nocheck
 // /api/knowledge/[id] — get or delete a specific document
 // GET: fetch a single document (with full content)
 // DELETE: delete a document

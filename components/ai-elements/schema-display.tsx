@@ -1,14 +1,13 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Badge } from "@repo/shadcn-ui/components/ui/badge";
+"use client"
+
+import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@repo/shadcn-ui/components/ui/collapsible";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 import { ChevronRightIcon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes } from "react";
 import { createContext, useContext, useMemo } from "react";
@@ -109,7 +108,7 @@ export const SchemaDisplayPath = ({
     <span
       className={cn("font-mono text-sm", className)}
       // oxlint-disable-next-line eslint-plugin-react(no-danger)
-      dangerouslySetInnerHTML={{ __html: children ?? highlightedPath }}
+      dangerouslySetInnerHTML={{ __html: String(children ?? highlightedPath) }}
       {...props}
     />
   );

@@ -1,16 +1,14 @@
-// @ts-nocheck
-// @ts-nocheck
+
 "use client"
-// @ts-nocheck;
 
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@repo/shadcn-ui/components/ui/accordion";
-import { Badge } from "@repo/shadcn-ui/components/ui/badge";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import type { Tool } from "ai";
 import { BotIcon } from "lucide-react";
 import type { ComponentProps } from "react";
@@ -106,7 +104,7 @@ export const AgentTool = memo(
         {...props}
       >
         <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">
-          {tool.description ?? "No description"}
+          <span>{typeof tool.description === "string" ? tool.description : "No description"}</span>
         </AccordionTrigger>
         <AccordionContent className="px-3 pb-3">
           <div className="rounded-md bg-muted/50">

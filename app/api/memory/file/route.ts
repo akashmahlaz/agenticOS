@@ -1,4 +1,3 @@
-// @ts-nocheck
 // PUT /api/memory/file — update a memory file's content
 // Body: { path: string, content: string }
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Browser sub-agent — focused on web browsing, searching, and content extraction
 // Uses lib/browser/playwright.ts (fetch + cheerio default, can swap to real browser)
 // Tools: search_web, browse_website, extract_links
@@ -64,7 +63,7 @@ export async function runBrowser(
       tools: {
         search_web: tool({
           description: "Search the web using DuckDuckGo (no API key needed).",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               query: z.string().describe("The search query"),
               numResults: z
@@ -91,7 +90,7 @@ export async function runBrowser(
 
         browse_website: tool({
           description: "Fetch a URL and extract its main content (text + links).",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               url: z.string().describe("The URL to browse"),
               maxChars: z
@@ -127,7 +126,7 @@ export async function runBrowser(
 
         extract_links: tool({
           description: "Extract all links from a webpage (useful for finding related content).",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               url: z.string().describe("The URL to extract links from"),
             })

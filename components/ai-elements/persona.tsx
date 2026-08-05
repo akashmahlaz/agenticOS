@@ -1,8 +1,7 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { cn } from "@repo/shadcn-ui/lib/utils";
+"use client"
+
+import { cn } from "@/lib/utils";
 import type { RiveParameters } from "@rive-app/react-webgl2";
 import {
   useRive,

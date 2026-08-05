@@ -1,9 +1,8 @@
-// @ts-nocheck
+
 "use client"
-// @ts-nocheck;
 
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
-import { Button } from "@repo/shadcn-ui/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Command,
   CommandDialog,
@@ -14,15 +13,15 @@ import {
   CommandList,
   CommandSeparator,
   CommandShortcut,
-} from "@repo/shadcn-ui/components/ui/command";
+} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
   DialogTrigger,
-} from "@repo/shadcn-ui/components/ui/dialog";
-import { Spinner } from "@repo/shadcn-ui/components/ui/spinner";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import {
   CircleSmallIcon,
   MarsIcon,

@@ -1,8 +1,7 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Button } from "@repo/shadcn-ui/components/ui/button";
+"use client"
+
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,8 +9,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@repo/shadcn-ui/components/ui/dropdown-menu";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import {
   ChevronDownIcon,
   ExternalLinkIcon,

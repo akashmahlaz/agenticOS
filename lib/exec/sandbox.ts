@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Exec tool — sandboxed shell command execution
 // OpenClaw-style: workspace-scoped, with approval for dangerous commands
 //

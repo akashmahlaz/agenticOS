@@ -1,14 +1,13 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Button } from "@repo/shadcn-ui/components/ui/button";
+"use client"
+
+import { Button } from "@/components/ui/button";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@repo/shadcn-ui/components/ui/hover-card";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/hover-card";
+import { cn } from "@/lib/utils";
 import type { FileUIPart, SourceDocumentUIPart } from "ai";
 import {
   FileTextIcon,

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Operator sub-agent — focused on running shell commands
 // Sandboxed by default, requires approval for dangerous commands
 // OpenClaw-style exec tool
@@ -63,7 +62,7 @@ export async function runOperator(
       tools: {
         run_command: tool({
           description: "Execute a shell command and return its output.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               command: z.string().describe("The shell command to run"),
               cwd: z.string().optional().describe("Working directory (optional)"),
@@ -111,7 +110,7 @@ export async function runOperator(
 
         check_command: tool({
           description: "Check whether a command would require user approval (dry run).",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({ command: z.string().describe("The shell command to check") })
           ),
           execute: async ({ command }) => {

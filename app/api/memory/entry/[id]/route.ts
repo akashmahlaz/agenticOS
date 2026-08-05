@@ -1,4 +1,3 @@
-// @ts-nocheck
 // DELETE /api/memory/entry/[id] — delete a single memory entry
 
 import { NextResponse } from "next/server";

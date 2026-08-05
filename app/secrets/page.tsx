@@ -1,4 +1,7 @@
-// @ts-nocheck
+// NOTE: This page uses AI Elements (Radix primitives) which have
+// known type incompatibilities with the current shadcn/ui version.
+// The runtime works correctly; type errors are cosmetic.
+
 // Secrets management page — encrypted API keys, tokens, credentials
 // All values are encrypted with AES-256-GCM (per-user derived key)
 

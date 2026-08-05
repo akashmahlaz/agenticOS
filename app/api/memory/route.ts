@@ -1,4 +1,3 @@
-// @ts-nocheck
 // GET /api/memory — list all memory (files + entries + daily notes) for the current user
 
 import { NextResponse } from "next/server";

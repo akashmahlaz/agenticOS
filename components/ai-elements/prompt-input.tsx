@@ -1,6 +1,5 @@
-// @ts-nocheck
+
 "use client"
-// @ts-nocheck;
 
 import {
   Command,
@@ -10,38 +9,38 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-} from "@repo/shadcn-ui/components/ui/command";
+} from "@/components/ui/command";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@repo/shadcn-ui/components/ui/dropdown-menu";
+} from "@/components/ui/dropdown-menu";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@repo/shadcn-ui/components/ui/hover-card";
+} from "@/components/ui/hover-card";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
-} from "@repo/shadcn-ui/components/ui/input-group";
+} from "@/components/ui/input-group";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@repo/shadcn-ui/components/ui/select";
-import { Spinner } from "@repo/shadcn-ui/components/ui/spinner";
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@repo/shadcn-ui/components/ui/tooltip";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import {
   CornerDownLeftIcon,

@@ -1,19 +1,18 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Button } from "@repo/shadcn-ui/components/ui/button";
+"use client"
+
+import { Button } from "@/components/ui/button";
 import {
   ButtonGroup,
   ButtonGroupText,
-} from "@repo/shadcn-ui/components/ui/button-group";
+} from "@/components/ui/button-group";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@repo/shadcn-ui/components/ui/tooltip";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
@@ -332,7 +331,7 @@ export const MessageResponse = memo(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
-      plugins={streamdownPlugins}
+      plugins={streamdownPlugins as any}
       {...props}
     />
   ),

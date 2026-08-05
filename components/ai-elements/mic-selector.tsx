@@ -1,22 +1,21 @@
-// @ts-nocheck
+
 "use client"
-// @ts-nocheck;
 
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
-import { Button } from "@repo/shadcn-ui/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Command,
   CommandEmpty,
   CommandInput,
   CommandItem,
   CommandList,
-} from "@repo/shadcn-ui/components/ui/command";
+} from "@/components/ui/command";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@repo/shadcn-ui/components/ui/popover";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { ChevronsUpDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import {

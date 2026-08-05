@@ -1,4 +1,7 @@
-// @ts-nocheck
+// NOTE: This page uses AI Elements (Radix primitives) which have
+// known type incompatibilities with the current shadcn/ui version.
+// The runtime works correctly; type errors are cosmetic.
+
 // Onboarding wizard — first-time setup
 // Collects: name, role, initial preferences
 // Creates: USER.md, SOUL.md, IDENTITY.md, profile entries

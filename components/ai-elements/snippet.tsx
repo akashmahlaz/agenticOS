@@ -1,6 +1,5 @@
-// @ts-nocheck
+
 "use client"
-// @ts-nocheck;
 
 import {
   InputGroup,
@@ -8,8 +7,8 @@ import {
   InputGroupButton,
   InputGroupInput,
   InputGroupText,
-} from "@repo/shadcn-ui/components/ui/input-group";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/input-group";
+import { cn } from "@/lib/utils";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import {

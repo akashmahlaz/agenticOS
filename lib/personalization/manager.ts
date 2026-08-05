@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Personalization manager — durable user preferences and identity
 // OpenClaw-style: USER.md with imperative directives, observed-date, status
 //
@@ -202,7 +201,7 @@ export async function getActiveProfile(userId: string): Promise<ProfileEntry[]> 
     orderBy: [{ category: "asc" }, { observedDate: "desc" }],
   });
 
-  return entries.map((e) => ({
+  return entries.map((e: any) => ({
     id: e.id,
     directive: e.directive,
     category: e.category as ProfileCategory,

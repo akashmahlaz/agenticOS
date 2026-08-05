@@ -1,9 +1,8 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Button } from "@repo/shadcn-ui/components/ui/button";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+"use client"
+
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { UIMessage } from "ai";
 import { ArrowDownIcon, DownloadIcon } from "lucide-react";
 import type { ComponentProps } from "react";

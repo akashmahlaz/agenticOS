@@ -1,4 +1,3 @@
-// @ts-nocheck
 // RAG (Retrieval-Augmented Generation) manager
 // Document storage + embeddings + search
 //
@@ -74,7 +73,7 @@ async function generateOpenAIEmbedding(text: string) {
 function generateFallbackEmbedding(text: string) {
   const vec = new Array(EMBEDDING_DIM).fill(0);
   const normalized = text.toLowerCase().replace(/[^a-z0-9\s]/g, " ");
-  const words = normalized.split(/\s+/).filter((w) => w.length > 2);
+  const words = normalized.split(/\s+/).filter((w: any) => w.length > 2);
 
   for (const word of words) {
     // Hash the word into a dimension
@@ -204,7 +203,7 @@ export async function searchDocuments(
   });
 
   const scored = docs
-    .map((doc) => {
+    .map((doc: any) => {
       let score = 0;
       if (doc.embedding && doc.embedding.length > 0) {
         // Convert Prisma Float[] to number[]
@@ -213,11 +212,11 @@ export async function searchDocuments(
       }
       return { doc, score };
     })
-    .filter((s) => s.score > 0.05)
-    .sort((a, b) => b.score - a.score)
+    .filter((s: any) => s.score > 0.05)
+    .sort((a: any, b: any) => b.score - a.score)
     .slice(0, limit);
 
-  return scored.map(({ doc, score }) => ({
+  return scored.map(({ doc, score }: any) => ({
     id: doc.id,
     title: doc.title,
     content: doc.content,

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Memory manager — OpenClaw-style long-term memory
 // Manages per-user memory files (USER.md, MEMORY.md, IDENTITY.md, SOUL.md)
 // and daily notes (memory/YYYY-MM-DD.md)
@@ -230,7 +229,7 @@ export async function addMemoryEntries(
   sourceMessageId?: string
 ) {
   return db.memoryEntry.createMany({
-    data: entries.map((e) => ({
+    data: entries.map((e: any) => ({
       userId,
       fact: e.fact,
       provenance: e.provenance,
@@ -375,7 +374,7 @@ export async function buildMemoryContext(userId: string, query?: string) {
       `## Top Memory (${topEntries.length} facts)\n` +
         topEntries
           .map(
-            (e) =>
+            (e: any) =>
               `- [${e.provenance}, importance ${e.importance}/10${
                 e.category ? `, ${e.category}` : ""
               }] ${e.fact}`
@@ -390,7 +389,7 @@ export async function buildMemoryContext(userId: string, query?: string) {
     if (hits.length > 0) {
       blocks.push(
         `## Memory relevant to current query\n` +
-          hits.map((e) => `- [${e.provenance}] ${e.fact}`).join("\n")
+          hits.map((e: any) => `- [${e.provenance}] ${e.fact}`).join("\n")
       );
     }
   }
@@ -401,7 +400,7 @@ export async function buildMemoryContext(userId: string, query?: string) {
     blocks.push(
       `## Recent Daily Notes\n` +
         recentNotes
-          .map((n) => `### ${n.date} (${n.entryCount} entries)\n${n.content.slice(0, 400)}`)
+          .map((n: any) => `### ${n.date} (${n.entryCount} entries)\n${n.content.slice(0, 400)}`)
           .join("\n\n")
     );
   }

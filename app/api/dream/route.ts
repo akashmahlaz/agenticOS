@@ -1,4 +1,3 @@
-// @ts-nocheck
 // /api/dream — manual dream sweep trigger + diary retrieval
 // GET: recent dream diary
 // POST: run a dream sweep

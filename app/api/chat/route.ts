@@ -1,391 +1,131 @@
-// @ts-nocheck
-// Streaming chat API — agenticOS
-// MiniMax M2 with chain-of-thought, streaming + tool calling + sub-agents + auto memory
+// Chat API — Route handler (slim)
+// POST /api/chat
+// Accepts UIMessage-format messages and returns a UIMessageStream response.
+// The stream is consumed by the useChat hook on the client.
 
+import { streamText, convertToModelMessages, type UIMessage } from "ai";
 import { createMinimax } from "vercel-minimax-ai-provider";
-import { streamText, tool, zodSchema, isStepCount, hasToolCall } from "ai";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { z } from "zod";
-import { subAgentTools, onSubAgentProgress } from "@/lib/agents/orchestrator";
-import {
-  buildMemoryContext,
-  autoCaptureFromTurn,
-  initDefaultMemory,
-  MEMORY_FILE_PATHS,
-} from "@/lib/memory/manager";
-import { buildRagContext } from "@/lib/rag/manager";
-import {
-  buildPersonalizationContext,
-  initUserProfile,
-} from "@/lib/personalization/manager";
-import { captureLearnings, findMatchingSkills } from "@/lib/personalization/self-learning";
+import { allTools as tools } from "./tools";
+import { buildChatContext, formatContextForPrompt } from "./context";
+import { buildSystemPrompt } from "./system-prompt";
+import { buildUIMessageStream } from "./stream";
 
-// ──────────────────────────────────────────────
-// Built-in Tools
-// ──────────────────────────────────────────────
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const tools: any = {
-  // ── Quick utility tools (always available) ──
-  getDate: tool({
-    description: "Get the current date and time.",
-    parameters: zodSchema(z.object({})),
-    execute: async () => ({
-      date: new Date().toISOString(),
-      weekday: new Date().toLocaleDateString("en-US", { weekday: "long" }),
-    }),
-  }),
+interface ChatRequest {
+  messages: UIMessage[];
+  sessionId?: string | null;
+  model?: string;
+  isTemporary?: boolean;
+}
 
-  calculate: tool({
-    description: "Perform a mathematical calculation.",
-    parameters: zodSchema(z.object({ expression: z.string().describe("Math expression") })),
-    execute: async (input: { expression: string }) => {
-      try {
-        const safe = input.expression.replace(/[^0-9+\-*/().%\s]/g, "");
-        // eslint-disable-next-line no-new-func
-        const result = new Function(`return ${safe}`)();
-        return { expression: input.expression, result: Number.isFinite(result) ? result : "Invalid" };
-      } catch {
-        return { expression: input.expression, result: "Error evaluating expression" };
-      }
-    },
-  }),
-
-  fetchUrl: tool({
-    description: "Fetch and extract the main content of a URL.",
-    parameters: zodSchema(z.object({ url: z.string().describe("The URL to fetch") })),
-    execute: async (input: { url: string }) => {
-      try {
-        const res = await fetch(input.url, {
-          headers: { "User-Agent": "agenticOS/1.0" },
-          signal: AbortSignal.timeout(8000),
-        });
-        const text = await res.text();
-        const clean = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-        return {
-          status: res.status,
-          title: (text.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]) ?? "No title",
-          length: text.length,
-          snippet: clean.slice(0, 500),
-        };
-      } catch (err) {
-        return { error: String(err) };
-      }
-    },
-  }),
-
-  // ── Sub-agent tools (delegate to specialized agents) ──
-  // These are tools the MAIN agent can call, but each invokes a separate
-  // sub-agent with its own focused system prompt and tool set.
-  ...subAgentTools,
-};
-
-// Cleanup helper for sub-agent progress listeners
-let activeSubAgentListener: (() => void) | null = null;
-
-// ──────────────────────────────────────────────
-// API Route (Streaming)
-// ──────────────────────────────────────────────
-
-export async function POST(req: Request) {
-  try {
-    const userId = getUserIdFromRequest(req);
-    if (!userId) {
-      return new Response("Unauthorized", { status: 401 });
-    }
-
-    const body = await req.json();
-    const { messages, sessionId, model } = body;
-    const selectedModel = model || "MiniMax-M2";
-
-    if (!Array.isArray(messages)) {
-      return new Response("Invalid messages", { status: 400 });
-    }
-
-    const apiKey = process.env.MINIMAX_API_KEY;
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: "MINIMAX_API_KEY not configured" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    const minimax = createMinimax({ apiKey });
-
-    // Convert messages
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const aiMessages = messages.map((m: any) => ({
-      role: m.role as "user" | "assistant" | "system",
-      content: m.content,
-    }));
-
-    // ── Auto-recall memory + RAG + personalization + skills ──
-    // Build a context block from the user's memory files, entries, recent notes,
-    // the knowledge base (RAG with vector embeddings), personalization profile,
-    // AND any learned skills that match the current query
-    let memoryContext: string | null = null;
-    let ragContext: string | null = null;
-    let personalizationContext: string | null = null;
-    let skillsContext: string | null = null;
-    try {
-      // Initialize default memory files on first chat (idempotent)
-      await initDefaultMemory(userId);
-      // Build context from current conversation's last user message
-      const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
-      const query = lastUserMsg?.content || "";
-      // Run all context lookups in parallel
-      const [mem, rag, profile, skills] = await Promise.all([
-        buildMemoryContext(userId, query),
-        buildRagContext(userId, query, 3),
-        buildPersonalizationContext(userId),
-        findMatchingSkills(userId, query),
-      ]);
-      memoryContext = mem;
-      ragContext = rag;
-      personalizationContext = profile;
-      if (skills.length > 0) {
-        skillsContext =
-          `## Learned Skills (apply if relevant)\n` +
-          skills
-            .map(
-              (s) =>
-                `- **${s.name}** (used ${s.useCount}x): ${s.description}`
-            )
-            .join("\n");
-      }
-    } catch (err) {
-      console.error("[chat] context recall failed:", err);
-    }
-
-    // Set global userId for sub-agents to access
-    (globalThis as any).__currentChatUserId = userId;
-
-    // We'll set the controller after the stream starts (below)
-    // so sub-agent progress can be forwarded to the client
-
-    // Stream the response
-    const result = streamText({
-      model: minimax(selectedModel),
-      system: `You are agenticOS — a powerful AI agent built for autonomous task completion. You can DELEGATE work to specialized sub-agents and use built-in tools directly.
-
-# Available Sub-Agents (delegate via tools)
-- **Researcher** (delegateToResearcher) — web research, fact-finding, source citations. Use for: "research X", "find info about Y", "what's the latest on Z"
-- **Coder** (delegateToCoder) — write, debug, refactor code. Use for: "write a function that...", "fix this bug", "refactor X to Y"
-- **Browser** (delegateToBrowser) — live web search (DuckDuckGo, no API key) + URL fetching with HTML cleaning. Use for: "search for...", "what's on example.com", "fetch this URL"
-- **Memory Keeper** (delegateToMemoryKeeper) — long-term memory of user prefs, project context, decisions. Use for: "remember that...", "what did I say about X last time"
-- **Knowledge** (delegateToKnowledge) — RAG over the user's knowledge base. Use for: "save this to my knowledge base", "search my docs for X", "what have I saved about Y"
-- **Operator** (delegateToOperator) — run shell commands (sandboxed, with approval for dangerous ones). Use for: "run this command", "check the system", "list files"
-
-# Direct Tools (built-in)
-- **Secret management**: secret_list, secret_get, secret_save, secret_delete
-  Use to manage encrypted API keys, tokens, credentials. Always encrypt user secrets.
-
-# Personalization
-You have access to the user's profile (durable directives) and learned skills. Follow the directives strictly. Apply learned skills when their trigger phrases appear in the user's message.
-
-When you call a sub-agent, the UI shows the user what's happening (e.g., "Researcher is fetching…"). Use the result of sub-agents to write your final synthesized answer.
-
-# Built-in Tools (call directly)
-- getDate, calculate, fetchUrl
-
-# Memory
-You have access to the user's long-term memory, knowledge base, and learned skills. Relevant context is auto-injected below.
-${personalizationContext ? `\n${personalizationContext}\n` : ""}
-${memoryContext ? `\n${memoryContext}\n` : ""}
-${ragContext ? `\n${ragContext}\n` : ""}
-${skillsContext ? `\n${skillsContext}\n` : ""}
-
-# Workflow
-1. For complex tasks, decompose and DELEGATE to sub-agents in parallel
-2. For simple tasks, use built-in tools directly
-3. ALWAYS synthesize the final answer — don't just dump sub-agent output
-4. Think step-by-step before responding
-5. Be thorough, precise, and helpful`,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      messages: aiMessages as any,
-      tools,
-      // Stop when: hit 15 steps OR a sub-agent returns (signals end of research/coding work)
-      stopWhen: isStepCount(15),
-    });
-
-    // Collect for final save
-    let fullText = "";
-    let reasoningSteps: Array<{ title: string; status: string }> = [];
-    let toolCalls: Array<{ name: string; args: Record<string, unknown>; result?: unknown }> = [];
-    interface SourceItem {
-      title?: string;
-      url?: string;
-      snippet?: string;
-    }
-    let sources: SourceItem[] = [];
-
-    // Stream as NDJSON
-    const stream = new ReadableStream({
-      async start(controller) {
-        // Expose controller so sub-agent listeners can forward progress events
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (globalThis as any).__agenticOSController = controller;
-
-        // Subscribe to sub-agent progress (if not already)
-        if (activeSubAgentListener) activeSubAgentListener();
-        activeSubAgentListener = onSubAgentProgress((event) => {
-          try {
-            const encoder = new TextEncoder();
-            controller.enqueue(
-              encoder.encode(JSON.stringify({ type: "subagent", ...event }) + "\n")
-            );
-          } catch {
-            // ignore
-          }
-        });
-
-        const encoder = new TextEncoder();
-        try {
-          for await (const chunk of result.fullStream) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const c = chunk as any;
-            const data: Record<string, unknown> = {};
-
-            if (c.type === "text-delta") {
-              fullText += c.text ?? "";
-              data.type = "text-delta";
-              data.delta = c.text ?? "";
-            } else if (c.type === "tool-call") {
-              toolCalls.push({
-                name: c.toolName,
-                args: (c.args ?? c.input ?? {}) as Record<string, unknown>,
-              });
-              data.type = "tool-call";
-              data.toolName = c.toolName;
-              data.args = c.args ?? c.input ?? {};
-            } else if (c.type === "tool-result") {
-              const tc = toolCalls.find((t) => t.name === c.toolName);
-              const result = c.output ?? c.result;
-              if (tc) tc.result = result;
-              data.type = "tool-result";
-              data.toolName = c.toolName;
-              data.result = result;
-
-              // If the result is from web search / deep research, emit as sources
-              if (c.toolName === "webSearch" || c.toolName === "deepResearch" || c.toolName === "search") {
-                const r = result as any;
-                if (r?.results && Array.isArray(r.results)) {
-                  sources.push(...r.results);
-                  // Also emit a sources event for the client
-                  controller.enqueue(
-                    encoder.encode(JSON.stringify({ type: "sources", items: r.results }) + "\n")
-                  );
-                } else if (Array.isArray(result)) {
-                  sources.push(...(result as SourceItem[]));
-                  controller.enqueue(
-                    encoder.encode(JSON.stringify({ type: "sources", items: result }) + "\n")
-                  );
-                }
-              }
-            } else if (c.type === "reasoning-delta" || c.type === "reasoning-start") {
-              data.type = "reasoning";
-              data.text = c.textDelta ?? c.text ?? "";
-              // Extract reasoning steps from reasoning-delta
-              const text = c.textDelta ?? c.text ?? "";
-              if (text) {
-                const lines = text.split(/\n+/).filter(Boolean);
-                reasoningSteps = lines.slice(-10).map((s: string, i: number, arr: string[]) => ({
-                  title: s.trim().slice(0, 100),
-                  status: i === arr.length - 1 ? "active" : "complete",
-                }));
-              }
-            } else if (c.type === "finish") {
-              data.type = "finish";
-              data.finishReason = c.finishReason;
-              if (c.totalUsage) {
-                data.usage = {
-                  input: c.totalUsage.inputTokens,
-                  output: c.totalUsage.outputTokens,
-                  total: c.totalUsage.totalTokens,
-                };
-              }
-            }
-
-            if (Object.keys(data).length > 0) {
-              controller.enqueue(encoder.encode(JSON.stringify(data) + "\n"));
-            }
-          }
-        } catch (err) {
-          controller.enqueue(encoder.encode(JSON.stringify({ type: "error", error: String(err) }) + "\n"));
-        } finally {
-          // ── Auto-capture memory + learn from this turn ──
-          // Extract facts from the user's last message and the assistant's response
-          try {
-            const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
-            if (lastUserMsg && fullText) {
-              const [captured, learnings] = await Promise.all([
-                autoCaptureFromTurn(
-                  userId,
-                  lastUserMsg.content,
-                  fullText,
-                  sessionId
-                ),
-                captureLearnings(userId, lastUserMsg.content),
-              ]);
-              if (captured > 0) {
-                controller.enqueue(
-                  encoder.encode(
-                    JSON.stringify({
-                      type: "memory",
-                      event: "auto-captured",
-                      count: captured,
-                    }) + "\n"
-                  )
-                );
-              }
-              if (learnings.count > 0) {
-                controller.enqueue(
-                  encoder.encode(
-                    JSON.stringify({
-                      type: "learning",
-                      event: "captured",
-                      count: learnings.count,
-                      detected: learnings.detected.map((d) => ({
-                        text: d.text,
-                        type: d.type,
-                        trigger: d.trigger,
-                      })),
-                    }) + "\n"
-                  )
-                );
-              }
-            }
-          } catch (err) {
-            console.error("[chat] auto-capture failed:", err);
-          }
-
-          // Cleanup sub-agent listener
-          if (activeSubAgentListener) {
-            activeSubAgentListener();
-            activeSubAgentListener = null;
-          }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (globalThis as any).__agenticOSController = null;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (globalThis as any).__currentChatUserId = null;
-          controller.close();
-        }
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/x-ndjson",
-        "X-Session-Id": sessionId || "",
-        "Cache-Control": "no-cache",
-      },
-    });
-  } catch (err) {
-    console.error("[chat] Error:", err);
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500,
+export async function POST(req: Request): Promise<Response> {
+  // 1. Auth
+  const userId = getUserIdFromRequest(req);
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  // 2. Parse + validate
+  const body = (await req.json()) as ChatRequest;
+  const { messages, sessionId: incomingSessionId, model, isTemporary } = body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return new Response(JSON.stringify({ error: "Invalid messages" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // 3. Resolve session — create one if not provided
+  const sessionId = incomingSessionId || (await createSession(userId, isTemporary));
+
+  // 4. API key check
+  const apiKey = process.env.MINIMAX_API_KEY;
+  if (!apiKey) {
+    return new Response(
+      JSON.stringify({ error: "MINIMAX_API_KEY not configured" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  // 5. Build context (auto-recall from memory/RAG/personalization/skills)
+  const incomingMessages = messages.map((m) => ({
+    role: m.role,
+    content: partsToText(m.parts),
+  }));
+  const ctx = await buildChatContext(userId, incomingMessages);
+  const systemPrompt = buildSystemPrompt(formatContextForPrompt(ctx));
+
+  // 6. Save the latest user message to the DB
+  const lastUserMsg = [...incomingMessages].reverse().find((m) => m.role === "user");
+  if (lastUserMsg && lastUserMsg.content) {
+    try {
+      await db.message.create({
+        data: {
+          sessionId,
+          role: "user",
+          content: lastUserMsg.content,
+        },
+      });
+    } catch (err) {
+      console.error("[chat] failed to save user message:", err);
+    }
+  }
+
+  // 7. Stream
+  const selectedModel = model || "MiniMax-M2";
+  const result = streamText({
+    model: createMinimax({ apiKey })(selectedModel),
+    system: systemPrompt,
+    messages: convertToModelMessages(messages),
+    tools,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any);
+
+  // 8. Wrap into UIMessageStream response
+  return buildUIMessageStream(
+    { userId, sessionId, messages: incomingMessages, model: selectedModel },
+    result.fullStream
+  );
+}
+
+/**
+ * Create a new chat session for a user.
+ */
+async function createSession(userId: string, isTemporary = false): Promise<string> {
+  const session = await db.session.create({
+    data: {
+      userId,
+      title: "New Chat",
+      model: "MiniMax-M2",
+      isTemporary: !!isTemporary,
+    },
+  });
+  return session.id;
+}
+
+/**
+ * Convert UIMessage parts to a single text string.
+ * useChat passes messages as { role, parts: UIMessagePart[] }.
+ */
+function partsToText(parts: UIMessage["parts"]): string {
+  return parts
+    .map((p) => {
+      switch (p.type) {
+        case "text":
+          return p.text;
+        case "reasoning":
+          return p.text;
+        default:
+          return "";
+      }
+    })
+    .join("\n")
+    .trim();
 }

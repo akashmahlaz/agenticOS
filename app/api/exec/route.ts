@@ -1,4 +1,3 @@
-// @ts-nocheck
 // /api/exec — execute a shell command (with approval gate)
 // POST: { command, cwd?, timeoutMs?, approved? }
 

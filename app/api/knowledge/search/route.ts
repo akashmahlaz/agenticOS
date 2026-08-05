@@ -1,4 +1,3 @@
-// @ts-nocheck
 // /api/knowledge/search — vector search across the knowledge base
 // POST: { query: string, limit?: number }
 

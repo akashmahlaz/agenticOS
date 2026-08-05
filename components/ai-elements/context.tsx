@@ -1,15 +1,14 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Button } from "@repo/shadcn-ui/components/ui/button";
+"use client"
+
+import { Button } from "@/components/ui/button";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@repo/shadcn-ui/components/ui/hover-card";
-import { Progress } from "@repo/shadcn-ui/components/ui/progress";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/hover-card";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 import type { LanguageModelUsage } from "ai";
 import type { ComponentProps } from "react";
 import { createContext, useContext, useMemo } from "react";
@@ -338,7 +337,7 @@ export const ContextReasoningUsage = ({
   ...props
 }: ContextReasoningUsageProps) => {
   const { usage, modelId } = useContextValue();
-  const reasoningTokens = usage?.reasoningTokens ?? 0;
+  const reasoningTokens = (usage as any)?.reasoningTokens ?? 0;
 
   if (children) {
     return children;
@@ -378,7 +377,7 @@ export const ContextCacheUsage = ({
   ...props
 }: ContextCacheUsageProps) => {
   const { usage, modelId } = useContextValue();
-  const cacheTokens = usage?.cachedInputTokens ?? 0;
+  const cacheTokens = (usage as any)?.cachedInputTokens ?? 0;
 
   if (children) {
     return children;

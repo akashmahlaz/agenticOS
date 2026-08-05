@@ -1,16 +1,15 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Button } from "@repo/shadcn-ui/components/ui/button";
+"use client"
+
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@repo/shadcn-ui/components/ui/select";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 import {
@@ -531,7 +530,6 @@ export const CodeBlockLanguageSelectorTrigger = ({
       "h-7 border-none bg-transparent px-2 text-xs shadow-none",
       className
     )}
-    size="sm"
     {...props}
   />
 );

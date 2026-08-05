@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Dreaming — background memory consolidation
 // OpenClaw-style 3-phase model: light → REM → deep
 // Light: scan & stage short-term material
@@ -94,7 +93,7 @@ export async function runRemPhase(
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
       .split(/\s+/)
-      .filter((w) => w.length > 4);
+      .filter((w: any) => w.length > 4);
     const key = words.slice(0, 2).sort().join(" ");
     if (!themes.has(key)) {
       themes.set(key, { count: 0, texts: [] });
@@ -106,7 +105,7 @@ export async function runRemPhase(
 
   // Top themes
   const sorted = Array.from(themes.entries())
-    .sort((a, b) => b[1].count - a[1].count)
+    .sort((a: any, b: any) => b[1].count - a[1].count)
     .slice(0, 5);
 
   return {
@@ -139,7 +138,7 @@ export async function runDeepPhase(
 ): Promise<DeepResult> {
   // Check current MEMORY.md to know what's already promoted
   const existing = await getTopMemoryEntries(userId, 50);
-  const existingFacts = new Set(existing.map((e) => e.fact.toLowerCase().slice(0, 60)));
+  const existingFacts = new Set(existing.map((e: any) => e.fact.toLowerCase().slice(0, 60)));
 
   const promoted: Array<{ fact: string; importance: number }> = [];
   const promotedEntries: DeepResult["promotedEntries"] = [];
@@ -170,7 +169,7 @@ export async function runDeepPhase(
   if (promoted.length > 0) {
     await addMemoryEntries(
       userId,
-      promoted.map((p) => ({
+      promoted.map((p: any) => ({
         fact: p.fact,
         provenance: "inferred_by_model",
         category: "context" as any,

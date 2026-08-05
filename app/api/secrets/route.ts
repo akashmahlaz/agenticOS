@@ -1,4 +1,3 @@
-// @ts-nocheck
 // /api/secrets — list & create user secrets
 // GET: list all (no values)
 // POST: create a new secret

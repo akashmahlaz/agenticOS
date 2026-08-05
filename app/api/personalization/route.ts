@@ -1,4 +1,3 @@
-// @ts-nocheck
 // /api/personalization — get user profile, complete onboarding
 // GET: profile entries + SOUL.md + IDENTITY.md
 // POST: complete onboarding

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Secret manager — encrypted storage for user secrets (API keys, tokens, etc.)
 // Tools exposed to the agent: secret_list, secret_get, secret_set, secret_delete
 
@@ -33,7 +32,7 @@ export async function listSecrets(userId: string): Promise<SecretSummary[]> {
     orderBy: { updatedAt: "desc" },
   });
 
-  return secrets.map((s) => ({
+  return secrets.map((s: any) => ({
     id: s.id,
     name: s.name,
     description: s.description,

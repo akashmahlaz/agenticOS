@@ -1,5 +1,4 @@
-// @ts-nocheck
-// @ts-nocheck
+
 import {
   Card,
   CardAction,
@@ -8,8 +7,8 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@repo/shadcn-ui/components/ui/card";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { Handle, Position } from "@xyflow/react";
 import type { ComponentProps } from "react";
 

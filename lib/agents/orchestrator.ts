@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Sub-agent orchestrator — exposes sub-agents as tools to the main agent
 // Each sub-agent runs in its own streamText/generateText context with focused tools
 
@@ -61,7 +60,7 @@ export const subAgentTools: any = {
   delegateToResearcher: tool({
     description:
       "Delegate a focused research task to the Researcher sub-agent. Use this when the user wants to research a topic, gather information from the web, or get a fact-checked summary. The sub-agent has access to web search, URL fetching, and deep research tools. Returns a synthesized summary with source citations.",
-    parameters: zodSchema(
+    inputSchema: zodSchema(
       z.object({
         task: z.string().describe("The specific research task or question"),
         context: z.string().optional().describe("Additional context to help the researcher"),
@@ -110,7 +109,7 @@ export const subAgentTools: any = {
   delegateToCoder: tool({
     description:
       "Delegate a coding task to the Coder sub-agent. Use this when the user wants to write, debug, or refactor code. The sub-agent produces clean code with comments and usage notes. Returns code blocks you can include in your final answer.",
-    parameters: zodSchema(
+    inputSchema: zodSchema(
       z.object({
         task: z.string().describe("The coding task — what to build/fix/refactor"),
         context: z.string().optional().describe("Codebase context, existing patterns, or constraints"),
@@ -160,7 +159,7 @@ export const subAgentTools: any = {
   delegateToMemoryKeeper: tool({
     description:
       "Delegate a memory task to the Memory Keeper sub-agent. Use this to save user preferences, project context, key decisions, or recall relevant facts from past sessions. Sub-agent uses provenance labels (observed_from_source, inferred_by_model, confirmed_by_user, imported_from_transcript) for every fact it writes.",
-    parameters: zodSchema(
+    inputSchema: zodSchema(
       z.object({
         task: z.string().describe("What to remember, recall, or update"),
       })
@@ -213,7 +212,7 @@ export const subAgentTools: any = {
   delegateToBrowser: tool({
     description:
       "Delegate a web browsing task to the Browser sub-agent. Use this for: searching the web, fetching specific URLs, extracting content from webpages, or following links. The sub-agent has access to web search (DuckDuckGo, no API key) and URL fetching with HTML cleaning.",
-    parameters: zodSchema(
+    inputSchema: zodSchema(
       z.object({
         task: z.string().describe("What to search for, fetch, or extract from the web"),
         context: z.string().optional().describe("Additional context to guide the browsing"),
@@ -262,7 +261,7 @@ export const subAgentTools: any = {
   delegateToKnowledge: tool({
     description:
       "Delegate a knowledge base task to the Knowledge sub-agent. Use this to: add documents to the knowledge base, search for relevant info across stored documents, list existing documents, or retrieve specific document content. RAG with vector embeddings (auto-fallback to hash embeddings when no API key).",
-    parameters: zodSchema(
+    inputSchema: zodSchema(
       z.object({
         task: z.string().describe("What to add, search, retrieve, or curate"),
         context: z.string().optional().describe("Additional context"),
@@ -316,7 +315,7 @@ export const subAgentTools: any = {
   delegateToOperator: tool({
     description:
       "Delegate a shell command task to the Operator sub-agent. Use this when the user wants to run shell commands, check system info, install packages, run scripts, etc. Sandboxed by default — dangerous commands (rm -rf, sudo, etc.) require user approval.",
-    parameters: zodSchema(
+    inputSchema: zodSchema(
       z.object({
         task: z.string().describe("What you need the operator to do (run a command, check status, etc.)"),
         context: z.string().optional().describe("Additional context"),
@@ -372,7 +371,7 @@ export const subAgentTools: any = {
   secret_list: tool({
     description:
       "List the names of all secrets you've stored (without showing the values). Use this to find which API keys, tokens, or credentials are available.",
-    parameters: zodSchema(z.object({})),
+    inputSchema: zodSchema(z.object({})),
     execute: async (_input, options?: any) => {
       const userId = options?.experimental_context?.userId || (globalThis as any).__currentChatUserId;
       if (!userId) {
@@ -395,7 +394,7 @@ export const subAgentTools: any = {
   secret_get: tool({
     description:
       "Retrieve a secret's value by its logical name (e.g. 'OPENAI_API_KEY'). The user has explicitly stored this secret. Use it carefully and only when needed.",
-    parameters: zodSchema(
+    inputSchema: zodSchema(
       z.object({
         name: z.string().describe("The secret's logical name, e.g. 'OPENAI_API_KEY'"),
       })
@@ -429,7 +428,7 @@ export const subAgentTools: any = {
   secret_save: tool({
     description:
       "Save a new secret or update an existing one. The value is encrypted at rest. Use this when the user gives you an API key, token, or credential and asks you to remember it.",
-    parameters: zodSchema(
+    inputSchema: zodSchema(
       z.object({
         name: z.string().describe("Logical name, e.g. 'OPENAI_API_KEY'"),
         value: z.string().describe("The secret value (will be encrypted)"),
@@ -458,7 +457,7 @@ export const subAgentTools: any = {
 
   secret_delete: tool({
     description: "Delete a stored secret by its name.",
-    parameters: zodSchema(
+    inputSchema: zodSchema(
       z.object({ name: z.string().describe("The secret's logical name") })
     ),
     execute: async ({ name }, options?: any) => {

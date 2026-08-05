@@ -1,6 +1,5 @@
-// @ts-nocheck
-// @ts-nocheck
-import { cn } from "@repo/shadcn-ui/lib/utils";
+
+import { cn } from "@/lib/utils";
 import { NodeToolbar, Position } from "@xyflow/react";
 import type { ComponentProps } from "react";
 

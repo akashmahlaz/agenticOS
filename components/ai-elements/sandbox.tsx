@@ -1,19 +1,18 @@
-// @ts-nocheck
+
 "use client"
-// @ts-nocheck;
 
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@repo/shadcn-ui/components/ui/collapsible";
+} from "@/components/ui/collapsible";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@repo/shadcn-ui/components/ui/tabs";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import type { ToolUIPart } from "ai";
 import { ChevronDownIcon, Code } from "lucide-react";
 import type { ComponentProps } from "react";

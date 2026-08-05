@@ -1,4 +1,3 @@
-// @ts-nocheck
 // /api/secrets/[name] — get (with value), update, or delete a secret
 // GET: returns the decrypted value
 // PATCH: update metadata

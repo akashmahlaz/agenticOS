@@ -1,4 +1,3 @@
-// @ts-nocheck
 // /api/knowledge — list + create documents
 // GET: list all documents for user
 // POST: create a new document

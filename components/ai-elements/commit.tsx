@@ -1,15 +1,14 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Avatar, AvatarFallback } from "@repo/shadcn-ui/components/ui/avatar";
-import { Button } from "@repo/shadcn-ui/components/ui/button";
+"use client"
+
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@repo/shadcn-ui/components/ui/collapsible";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 import {
   CheckIcon,
   CopyIcon,

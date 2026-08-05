@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Researcher sub-agent — focused on web research, fact-finding, and summarization
 // Has access to: web search, URL fetch, deep research tools
 // Returns a synthesized answer with source citations
@@ -59,7 +58,7 @@ export async function runResearcher(
       tools: {
         webSearch: tool({
           description: "Search the web for multiple results on a topic.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               query: z.string().describe("The search query"),
               numResults: z.number().optional().describe("Number of results (default 5)"),
@@ -88,7 +87,7 @@ export async function runResearcher(
 
         fetchUrl: tool({
           description: "Fetch a URL and extract its main content.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({ url: z.string().describe("The URL to fetch") })
           ),
           execute: async ({ url }) => {
@@ -126,7 +125,7 @@ export async function runResearcher(
 
         deepResearch: tool({
           description: "Run a focused deep-research pass on multiple URLs at once.",
-          parameters: zodSchema(
+          inputSchema: zodSchema(
             z.object({
               topic: z.string().describe("The research topic"),
               urls: z.array(z.string()).describe("URLs to fetch in parallel"),

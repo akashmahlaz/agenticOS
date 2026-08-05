@@ -1,10 +1,9 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Alert, AlertDescription } from "@repo/shadcn-ui/components/ui/alert";
-import { Button } from "@repo/shadcn-ui/components/ui/button";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+"use client"
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { ToolUIPart } from "ai";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, useContext, useMemo } from "react";

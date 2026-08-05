@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth } from "@/app/(app)/layout";
+import { useAuth } from "@/components/auth-wrapper";
 import AuthPage from "@/components/auth-page";
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {

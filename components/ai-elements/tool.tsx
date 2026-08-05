@@ -1,14 +1,13 @@
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { Badge } from "@repo/shadcn-ui/components/ui/badge";
+"use client"
+
+import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@repo/shadcn-ui/components/ui/collapsible";
-import { cn } from "@repo/shadcn-ui/lib/utils";
+} from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {
   CheckCircleIcon,

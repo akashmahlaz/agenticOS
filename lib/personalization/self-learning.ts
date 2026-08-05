@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Self-learning — detect corrections and "from now on" patterns
 // OpenClaw-style: turn failed/corrected turns into reusable skills
 //
@@ -52,7 +51,7 @@ export function detectLearnings(userMessage: string): DetectedLearning[] {
     const match = userMessage.match(pattern);
     if (match) {
       // Extract the directive (the sentence containing the match)
-      const sentences = userMessage.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
+      const sentences = userMessage.split(/[.!?]+/).map((s: any) => s.trim()).filter(Boolean);
       const matchingSentence = sentences.find((s) => pattern.test(s));
       if (matchingSentence && matchingSentence.length > 10) {
         results.push({
@@ -68,7 +67,7 @@ export function detectLearnings(userMessage: string): DetectedLearning[] {
   for (const pattern of NEGATIVE_CORRECTION_PATTERNS) {
     const match = userMessage.match(pattern);
     if (match) {
-      const sentences = userMessage.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
+      const sentences = userMessage.split(/[.!?]+/).map((s: any) => s.trim()).filter(Boolean);
       const matchingSentence = sentences.find((s) => pattern.test(s));
       if (matchingSentence && matchingSentence.length > 10) {
         results.push({
@@ -196,8 +195,8 @@ export async function findMatchingSkills(userId: string, userMessage: string) {
   const allSkills = await getUserSkills(userId, "active");
   const lower = userMessage.toLowerCase();
 
-  const matching = allSkills.filter((s) =>
-    s.triggerPhrases.some((phrase) => lower.includes(phrase.toLowerCase()))
+  const matching = allSkills.filter((s: any) =>
+    s.triggerPhrases.some((phrase: any) => lower.includes(String(phrase).toLowerCase()))
   );
 
   // Update use count

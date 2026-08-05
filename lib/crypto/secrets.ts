@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Cryptographic helpers for secret storage
 // AES-256-GCM with per-user key derived from JWT_SECRET + userId
 // Each secret has its own random IV, GCM auth tag prevents tampering

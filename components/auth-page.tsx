@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAuth } from "@/app/(app)/layout";
+import { useAuth } from "@/components/auth-wrapper";
 
 // ──────────────────────────────────────────────
 // Icons

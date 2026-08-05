@@ -1,9 +1,7 @@
-// @ts-nocheck
-// @ts-nocheck
-"use client"
-// @ts-nocheck;
 
-import { cn } from "@repo/shadcn-ui/lib/utils";
+"use client"
+
+import { cn } from "@/lib/utils";
 import { Controls as ControlsPrimitive } from "@xyflow/react";
 import type { ComponentProps } from "react";
 
