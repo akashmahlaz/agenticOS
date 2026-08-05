@@ -2,7 +2,7 @@
 // Neon PostgreSQL with connection pooling via @prisma/adapter-pg
 
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@/lib/generated/prisma/client";
+import { PrismaClient } from "../lib/generated/prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -15,7 +15,8 @@ function createPrismaClient() {
   }
 
   const adapter = new PrismaPg(connectionString);
-  return new PrismaClient({ adapter } as ConstructorParameters<typeof PrismaClient>[0]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new (PrismaClient as any)({ adapter });
 }
 
 export const db = globalForPrisma.prisma ?? createPrismaClient();

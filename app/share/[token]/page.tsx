@@ -89,7 +89,8 @@ export default async function SharedChatPage({ params }: PageProps) {
             <p className="text-sm">No messages in this chat yet</p>
           </div>
         ) : (
-          session.messages.map((m) => (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          session.messages.map((m: any) => (
             <div
               key={m.id}
               className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}
