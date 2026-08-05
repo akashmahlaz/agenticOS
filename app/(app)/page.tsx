@@ -1,17 +1,27 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Sidebar from "@/components/chat/sidebar";
 import ChatContainer from "@/components/chat/chat-container";
 import AuthGate from "@/components/auth-gate";
 
-export default function AppPage() {
+function AppPageInner() {
   const router = useRouter();
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const urlId = searchParams.get("id") || undefined;
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(urlId || null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+
+  // Sync URL -> state
+  useEffect(() => {
+    if (urlId !== activeSessionId) {
+      setActiveSessionId(urlId || null);
+      setRefreshKey((k) => k + 1);
+    }
+  }, [urlId, activeSessionId]);
 
   // Detect mobile
   useEffect(() => {
@@ -45,7 +55,7 @@ export default function AppPage() {
       setActiveSessionId(id);
       setRefreshKey((k) => k + 1);
       setDrawerOpen(false);
-      router.push(`/c/${id}`);
+      router.push(`/?id=${id}`);
     },
     [router]
   );
@@ -53,7 +63,7 @@ export default function AppPage() {
   const handleSessionCreated = useCallback(
     (id: string) => {
       setActiveSessionId(id);
-      router.push(`/c/${id}`);
+      router.push(`/?id=${id}`);
     },
     [router]
   );
@@ -106,5 +116,17 @@ export default function AppPage() {
         </div>
       </div>
     </AuthGate>
+  );
+}
+
+export default function AppPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground">Loading…</div>
+      </div>
+    }>
+      <AppPageInner />
+    </Suspense>
   );
 }
