@@ -35,6 +35,10 @@ import {
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTools,
+  PromptInputActionMenu,
+  PromptInputActionMenuTrigger,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuItem,
   PromptInputActionAddAttachments,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
@@ -469,7 +473,16 @@ export default function ChatContainer(props: ChatContainerProps) {
             </PromptInputBody>
             <PromptInputFooter className="px-2 pb-2 pt-0">
               <PromptInputTools className="gap-0.5">
-                <PromptInputActionAddAttachments />
+                <PromptInputActionMenu>
+                  <PromptInputActionMenuTrigger />
+                  <PromptInputActionMenuContent>
+                    <PromptInputActionMenuItem onClick={() => {/* placeholder */}}>
+                      <BrainIcon size={14} className="mr-2" />
+                      Deep Research
+                    </PromptInputActionMenuItem>
+                    <PromptInputActionAddAttachments />
+                  </PromptInputActionMenuContent>
+                </PromptInputActionMenu>
               </PromptInputTools>
               <PromptInputSubmit
                 status={isStreaming ? "streaming" : "ready"}
