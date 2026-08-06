@@ -14,6 +14,8 @@ const ALLOWED_KEYS = [
   "GITHUB_TOKEN",
   "VERCEL_TOKEN",
   "OPENAI_API_KEY",
+  "BRAVE_API_KEY",
+  "SERPER_API_KEY",
 ];
 
 export async function POST(req: Request) {

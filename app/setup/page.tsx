@@ -13,6 +13,18 @@ import { useAuth } from "@/components/auth-wrapper";
 
 const KEY_FIELDS = [
   {
+    name: "BRAVE_API_KEY",
+    label: "Brave Search API Key",
+    placeholder: "BSA...",
+    description: "Web search for the Browser sub-agent. 2,000 free queries/month. Get at brave.com/search/api",
+  },
+  {
+    name: "SERPER_API_KEY",
+    label: "Serper API Key (Google Search)",
+    placeholder: "...",
+    description: "Alternative to Brave — Google results via API. 2,500 free queries/month. Get at serper.dev",
+  },
+  {
     name: "ROCKETREACH_API_KEY",
     label: "RocketReach API Key",
     placeholder: "rk_live_...",

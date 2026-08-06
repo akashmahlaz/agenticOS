@@ -62,7 +62,8 @@ export async function runBrowser(
         : `Task: ${opts.task}`,
       tools: {
         search_web: tool({
-          description: "Search the web using DuckDuckGo (no API key needed).",
+          description:
+            "Search the web. Uses Brave Search API if BRAVE_API_KEY is set, falls back to Serper (Google) if SERPER_API_KEY is set, then DuckDuckGo as a last resort. Returns an error message if no API keys are configured and DDG is blocked.",
           inputSchema: zodSchema(
             z.object({
               query: z.string().describe("The search query"),
@@ -81,7 +82,10 @@ export async function runBrowser(
             const search = await searchWeb(query, numResults);
             opts.onProgress?.({
               type: "tool-result",
-              message: `Found ${search.results.length} results`,
+              message:
+                search.results.length > 0
+                  ? `Found ${search.results.length} results from ${search.source}`
+                  : `Search failed: ${search.error ?? "no results"}`,
               toolName: "search_web",
             });
             return search;
