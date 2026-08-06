@@ -27,18 +27,14 @@ export default function HomePage() {
   }, []);
 
   return (
-    <AppShell
-      activeSessionId={null}
-      isTempMode={isTempMode}
-      chatView={
-        <ChatView
-          initialSessionId={null}
-          isTempMode={isTempMode}
-          onMenuClick={() => setDrawerOpen(true)}
-          onStartTemp={handleStartTemp}
-          onExitTemp={handleExitTemp}
-        />
-      }
-    />
+    <AppShell activeSessionId={null} isTempMode={isTempMode}>
+      <ChatView
+        initialSessionId={null}
+        isTempMode={isTempMode}
+        onMenuClick={() => setDrawerOpen(true)}
+        onStartTemp={handleStartTemp}
+        onExitTemp={handleExitTemp}
+      />
+    </AppShell>
   );
 }

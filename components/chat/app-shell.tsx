@@ -18,14 +18,14 @@ export interface AppShellProps {
   activeSessionId: string | null;
   /** Whether in temp mode */
   isTempMode: boolean;
-  /** The chat view (server or client) */
-  chatView: React.ReactNode;
+  /** The chat view content (passed as children to support RSC) */
+  children: React.ReactNode;
 }
 
 export default function AppShell({
   activeSessionId: initialSessionId,
   isTempMode: initialIsTempMode,
-  chatView,
+  children,
 }: AppShellProps) {
   const router = useRouter();
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
@@ -173,7 +173,7 @@ export default function AppShell({
           />
         </div>
 
-        <div className="flex-1 flex flex-col min-w-0">{chatView}</div>
+        <div className="flex-1 flex flex-col min-w-0">{children}</div>
       </div>
     </AuthGate>
   );

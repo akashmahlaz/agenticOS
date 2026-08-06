@@ -55,21 +55,17 @@ export default async function ChatPage({ params }: PageProps) {
   );
 
   return (
-    <AppShell
-      activeSessionId={id}
-      isTempMode={false}
-      chatView={
-        <ChatView
-          initialSessionId={id}
-          initialMessages={initialMessages}
-          initialModel={session.model}
-          isTempMode={false}
-          onMenuClick={() => {}}
-          onStartTemp={() => {}}
-          onExitTemp={() => {}}
-        />
-      }
-    />
+    <AppShell activeSessionId={id} isTempMode={false}>
+      <ChatView
+        initialSessionId={id}
+        initialMessages={initialMessages}
+        initialModel={session.model}
+        isTempMode={false}
+        onMenuClick={() => {}}
+        onStartTemp={() => {}}
+        onExitTemp={() => {}}
+      />
+    </AppShell>
   );
 }
 
