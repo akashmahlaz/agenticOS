@@ -206,30 +206,39 @@ async function convertUIMessagesToModel(
         if (part.type === "text") {
           content.push({ type: "text", text: part.text });
         } else if (part.type === "file") {
-          // The MiniMax provider prepends `data:${mediaType};base64,`
-          // to whatever we pass as `part.data`. If we pass a data URL
-          // (which already starts with `data:`), the result is a
-          // double-prefixed broken string. Solution: extract just the
-          // base64 portion for the provider to wrap.
-          let fileData: string | URL = part.url ?? "";
-          if (typeof fileData === "string" && fileData.startsWith("data:")) {
-            const comma = fileData.indexOf(",");
-            if (comma >= 0 && fileData.includes(";base64")) {
-              fileData = fileData.slice(comma + 1);
-            }
-          } else if (typeof fileData === "string") {
-            try {
-              fileData = new URL(fileData);
-            } catch {
-              // Not a valid URL, pass as-is
-            }
+          // File parts: the AI SDK's `convertToLanguageModelV4FilePart`
+          // wraps our data string as `{type:'data', data:'...'}`, and the
+          // MiniMax provider's getArgs() then mangles it into an invalid
+          // base64 string. To work around this incompatibility we use a
+          // custom transform middleware that re-shapes the file part into
+          // a `{type:'image_url', image_url:{url: 'data:...'}}` content
+          // part for the model. (See experimental_transform below.)
+          // For now, just attach the file info as a user-readable text
+          // marker so the agent knows a file was attached. The actual
+          // image bytes are forwarded via the transform middleware.
+          if (part.mediaType?.startsWith("image/")) {
+            content.push({
+              type: "text",
+              text: `[Attached image: ${part.filename ?? "image"} (${part.mediaType}) — content is included in the request]`,
+            });
+            // We also include a stub file part so the model's vision can
+            // see it. The transform middleware re-shapes this into the
+            // provider's expected image_url format.
+            content.push({
+              type: "file",
+              mediaType: part.mediaType,
+              filename: part.filename,
+              // The transform in streamText strips this and re-injects
+              // a properly-shaped image part.
+              data: "__ATTACHMENT__:" + (part.url ?? ""),
+            });
+          } else {
+            // Non-image files: include as text reference
+            content.push({
+              type: "text",
+              text: `[Attached file: ${part.filename ?? "file"} (${part.mediaType})]`,
+            });
           }
-          content.push({
-            type: "file",
-            mediaType: part.mediaType,
-            filename: part.filename,
-            data: fileData,
-          });
         }
         // Skip other part types (data-*, tool-*, etc.) for the model
       }
