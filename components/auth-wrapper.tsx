@@ -97,6 +97,7 @@ export default function AuthWrapper({ children }: { children: ReactNode }) {
       const res = await fetch("/api/auth/me", {
         headers: { Authorization: `Bearer ${cookieToken}` },
         credentials: "include",
+        signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) {
         // Token is invalid/expired — clear it
@@ -113,8 +114,15 @@ export default function AuthWrapper({ children }: { children: ReactNode }) {
         setToken(null);
         setUser(null);
       }
-    } catch {
-      // Network error — keep the token, will retry on next refresh
+    } catch (err) {
+      // Network error or timeout — clear loading state so user can try again
+      console.warn("[auth] refreshUser failed:", err);
+      // If it's a timeout, treat as no user (force re-login)
+      if (err instanceof DOMException && err.name === "TimeoutError") {
+        writeCookie(AUTH_COOKIE, null);
+        setToken(null);
+        setUser(null);
+      }
     } finally {
       setLoading(false);
     }
