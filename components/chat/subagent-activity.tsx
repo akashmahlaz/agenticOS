@@ -1,5 +1,5 @@
 // SubAgentActivity — shows the sub-agent delegation activity
-// Used inside ChatMessage, above the final response
+// Used inside AI message bubble, above the final response
 
 "use client";
 
@@ -16,9 +16,11 @@ import {
   BookOpenIcon,
   CompassIcon,
   TerminalIcon,
+  UserIcon,
+  KeyIcon,
 } from "lucide-react";
 
-export interface SubAgentEvent {
+interface SubAgentEvent {
   agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst" | "browser" | "knowledge" | "operator";
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
@@ -26,21 +28,61 @@ export interface SubAgentEvent {
   toolName?: string;
   result?: string;
   durationMs?: number;
-  ts?: number;
+  ts: number;
 }
 
 const AGENT_META: Record<
   SubAgentEvent["agent"],
   { name: string; icon: React.ElementType; color: string; bg: string }
 > = {
-  researcher: { name: "Researcher", icon: SearchIcon, color: "text-teal", bg: "bg-teal/10 border-teal/20" },
-  coder: { name: "Coder", icon: CodeIcon, color: "text-coral", bg: "bg-coral/10 border-coral/20" },
-  "memory-keeper": { name: "Memory Keeper", icon: DatabaseIcon, color: "text-primary", bg: "bg-primary/10 border-primary/20" },
-  browser: { name: "Browser", icon: CompassIcon, color: "text-info", bg: "bg-info/10 border-info/20" },
-  knowledge: { name: "Knowledge", icon: BookOpenIcon, color: "text-accent-foreground", bg: "bg-accent/20 border-accent/40" },
-  operator: { name: "Operator", icon: TerminalIcon, color: "text-warning", bg: "bg-warning/10 border-warning/20" },
-  writer: { name: "Writer", icon: PenIcon, color: "text-success", bg: "bg-success/10 border-success/20" },
-  analyst: { name: "Analyst", icon: BarChart3Icon, color: "text-warning", bg: "bg-warning/10 border-warning/20" },
+  researcher: {
+    name: "Researcher",
+    icon: SearchIcon,
+    color: "text-teal",
+    bg: "bg-teal/10 border-teal/20",
+  },
+  coder: {
+    name: "Coder",
+    icon: CodeIcon,
+    color: "text-coral",
+    bg: "bg-coral/10 border-coral/20",
+  },
+  "memory-keeper": {
+    name: "Memory Keeper",
+    icon: DatabaseIcon,
+    color: "text-primary",
+    bg: "bg-primary/10 border-primary/20",
+  },
+  browser: {
+    name: "Browser",
+    icon: CompassIcon,
+    color: "text-info",
+    bg: "bg-info/10 border-info/20",
+  },
+  knowledge: {
+    name: "Knowledge",
+    icon: BookOpenIcon,
+    color: "text-accent-foreground",
+    bg: "bg-accent/20 border-accent/40",
+  },
+  operator: {
+    name: "Operator",
+    icon: TerminalIcon,
+    color: "text-warning",
+    bg: "bg-warning/10 border-warning/20",
+  },
+  writer: {
+    name: "Writer",
+    icon: PenIcon,
+    color: "text-success",
+    bg: "bg-success/10 border-success/20",
+  },
+  analyst: {
+    name: "Analyst",
+    icon: BarChart3Icon,
+    color: "text-warning",
+    bg: "bg-warning/10 border-warning/20",
+  },
 };
 
 const TOOL_ICONS: Record<string, React.ElementType> = {
@@ -61,10 +103,10 @@ const TOOL_ICONS: Record<string, React.ElementType> = {
   delete_document: BookOpenIcon,
   run_command: TerminalIcon,
   check_command: TerminalIcon,
-  secret_list: BookOpenIcon,
-  secret_get: BookOpenIcon,
-  secret_save: BookOpenIcon,
-  secret_delete: BookOpenIcon,
+  secret_list: KeyIcon,
+  secret_get: KeyIcon,
+  secret_save: KeyIcon,
+  secret_delete: KeyIcon,
 };
 
 export default function SubAgentActivity({
@@ -127,7 +169,8 @@ export default function SubAgentActivity({
 
             <div className="px-3 pb-2.5 pt-1 space-y-1.5 border-t border-current/10 bg-background/30">
               {agentEvents.map((e, i) => {
-                if (e.status === "started" || e.status === "done" || e.status === "error") return null;
+                if (e.status === "started" || e.status === "done" || e.status === "error")
+                  return null;
                 const ToolIcon = e.toolName ? TOOL_ICONS[e.toolName] || WrenchIcon : null;
                 return (
                   <div key={i} className="flex items-center gap-2 text-[11px] text-muted-foreground">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useAuth } from "@/components/auth-wrapper";
+import { useAuth } from "@/app/(app)/layout";
 import { useTheme } from "@/components/theme-provider";
 import ModeSwitcher from "@/components/chat/mode-switcher";
 
