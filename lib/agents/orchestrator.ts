@@ -584,7 +584,7 @@ export const subAgentTools: any = {
 
   secret_get: tool({
     description:
-      "Retrieve a secret's value by its logical name (e.g. 'OPENAI_API_KEY'). The user has explicitly stored this secret. Use it carefully and only when needed.",
+      "Retrieve a secret's value by its logical name (e.g. 'OPENAI_API_KEY', 'ROCKETREACH_API_KEY'). Falls back to the user secret, then to a server-wide env var. Use it carefully and only when needed.",
     inputSchema: zodSchema(
       z.object({
         name: z.string().describe("The secret's logical name, e.g. 'OPENAI_API_KEY'"),
@@ -597,22 +597,35 @@ export const subAgentTools: any = {
       }
       const { getSecret } = await import("@/lib/secrets/manager");
       const secret = await getSecret(userId, name);
-      if (!secret) {
-        return { found: false };
+      if (secret) {
+        const preview =
+          secret.value.length > 12
+            ? `${secret.value.slice(0, 4)}...${secret.value.slice(-4)}`
+            : "****";
+        return {
+          found: true,
+          name: secret.name,
+          description: secret.description,
+          preview,
+          value: secret.value,
+          source: "user-secret",
+        };
       }
-      // Return a preview by default (first 4 + last 4 chars)
-      const preview =
-        secret.value.length > 12
-          ? `${secret.value.slice(0, 4)}...${secret.value.slice(-4)}`
-          : "****";
-      return {
-        found: true,
-        name: secret.name,
-        description: secret.description,
-        preview,
-        // Don't include full value unless explicitly needed (avoids leaking to logs)
-        value: secret.value,
-      };
+      // Fallback to server env (for shared keys like ROCKETREACH_API_KEY)
+      const envVal = process.env[name];
+      if (envVal) {
+        return {
+          found: true,
+          name,
+          preview:
+            envVal.length > 12
+              ? `${envVal.slice(0, 4)}...${envVal.slice(-4)}`
+              : "****",
+          value: envVal,
+          source: "server-env",
+        };
+      }
+      return { found: false };
     },
   }),
 

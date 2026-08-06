@@ -1,12 +1,12 @@
 // Lead Generation sub-agent — finds professional contacts via RocketReach
-// Uses the user's stored ROCKETREACH_API_KEY secret.
-// Returns structured contact data: name, title, company, emails, phones, LinkedIn.
+// Uses the user's stored ROCKETREACH_API_KEY secret, with fallback to
+// server-wide Vercel env var if no user secret is configured.
 
 import { generateText, tool, zodSchema } from "ai";
 import { z } from "zod";
 import { createMinimax } from "vercel-minimax-ai-provider";
 import { createRocketReach, type RocketReachProfile } from "@/lib/integrations/rocketreach";
-import { getSecret } from "@/lib/secrets/manager";
+import { resolveKeyWithSource } from "@/lib/integrations/keys";
 import type { SubAgentCallOptions, SubAgentResult } from "./types";
 
 const minimax = (apiKey: string) => createMinimax({ apiKey });
@@ -75,11 +75,11 @@ export async function runLeadGen(
           description: "Fetch the user's stored ROCKETREACH_API_KEY secret.",
           inputSchema: zodSchema(z.object({})),
           execute: async () => {
-            const secret = await getSecret(userId, "ROCKETREACH_API_KEY");
-            if (!secret) {
-              return { found: false, message: "No ROCKETREACH_API_KEY secret saved. Tell the user to add it via /secrets." };
+            const key = await resolveKeyWithSource(userId, "ROCKETREACH_API_KEY");
+            if (!key) {
+              return { found: false, message: "No ROCKETREACH_API_KEY configured. Add it via /secrets (per-user) or as a Vercel env var (server-wide)." };
             }
-            return { found: true, key: secret.value };
+            return { found: true, key: key.value, source: key.source };
           },
         }),
 
@@ -100,11 +100,11 @@ export async function runLeadGen(
               message: `Searching RocketReach: ${query}`,
               toolName: "searchContacts",
             });
-            const secret = await getSecret(userId, "ROCKETREACH_API_KEY");
-            if (!secret) {
-              return { error: "No ROCKETREACH_API_KEY saved" };
+            const key = await resolveKeyWithSource(userId, "ROCKETREACH_API_KEY");
+            if (!key) {
+              return { error: "No ROCKETREACH_API_KEY configured" };
             }
-            const rr = createRocketReach(secret.value);
+            const rr = createRocketReach(key.value);
             try {
               const result = await rr.search({ query, page_size });
               opts.onProgress?.({
@@ -140,9 +140,9 @@ export async function runLeadGen(
               message: `Looking up contact: ${input.email || input.linkedin_url || input.name}`,
               toolName: "lookupContact",
             });
-            const secret = await getSecret(userId, "ROCKETREACH_API_KEY");
-            if (!secret) return { error: "No ROCKETREACH_API_KEY saved" };
-            const rr = createRocketReach(secret.value);
+            const key = await resolveKeyWithSource(userId, "ROCKETREACH_API_KEY");
+            if (!key) return { error: "No ROCKETREACH_API_KEY configured" };
+            const rr = createRocketReach(key.value);
             try {
               let profile: RocketReachProfile | null = null;
               if (input.email) profile = await rr.lookupByEmail(input.email);

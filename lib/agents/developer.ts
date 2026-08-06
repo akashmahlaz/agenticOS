@@ -6,7 +6,7 @@ import { generateText, tool, zodSchema } from "ai";
 import { z } from "zod";
 import { createMinimax } from "vercel-minimax-ai-provider";
 import { createGitHub } from "@/lib/integrations/github";
-import { getSecret } from "@/lib/secrets/manager";
+import { resolveKeyWithSource } from "@/lib/integrations/keys";
 import type { SubAgentCallOptions, SubAgentResult } from "./types";
 
 const minimax = (apiKey: string) => createMinimax({ apiKey });
@@ -69,11 +69,11 @@ export async function runDeveloper(
           description: "Fetch the user's stored GITHUB_TOKEN secret.",
           inputSchema: zodSchema(z.object({})),
           execute: async () => {
-            const secret = await getSecret(userId, "GITHUB_TOKEN");
-            if (!secret) {
-              return { found: false, message: "No GITHUB_TOKEN secret saved. Tell the user to add it via /secrets." };
+            const key = await resolveKeyWithSource(userId, "GITHUB_TOKEN");
+            if (!key) {
+              return { found: false, message: "No GITHUB_TOKEN configured. Add it via /secrets (per-user) or as a Vercel env var (server-wide)." };
             }
-            return { found: true, key: secret.value };
+            return { found: true, key: key.value, source: key.source };
           },
         }),
 
@@ -81,9 +81,9 @@ export async function runDeveloper(
           description: "List the authenticated user's GitHub repositories.",
           inputSchema: zodSchema(z.object({})),
           execute: async () => {
-            const secret = await getSecret(userId, "GITHUB_TOKEN");
-            if (!secret) return { error: "No GITHUB_TOKEN saved" };
-            const gh = createGitHub(secret.value);
+            const key = await resolveKeyWithSource(userId, "GITHUB_TOKEN");
+            if (!key) return { error: "No GITHUB_TOKEN configured" };
+            const gh = createGitHub(key.value);
             try {
               return await gh.listRepos();
             } catch (err) {
@@ -101,9 +101,9 @@ export async function runDeveloper(
             })
           ),
           execute: async ({ owner, repo }) => {
-            const secret = await getSecret(userId, "GITHUB_TOKEN");
-            if (!secret) return { error: "No GITHUB_TOKEN saved" };
-            const gh = createGitHub(secret.value);
+            const key = await resolveKeyWithSource(userId, "GITHUB_TOKEN");
+            if (!key) return { error: "No GITHUB_TOKEN configured" };
+            const gh = createGitHub(key.value);
             try {
               return await gh.getRepo(owner, repo);
             } catch (err) {
@@ -122,9 +122,9 @@ export async function runDeveloper(
             })
           ),
           execute: async ({ owner, repo, path }) => {
-            const secret = await getSecret(userId, "GITHUB_TOKEN");
-            if (!secret) return { error: "No GITHUB_TOKEN saved" };
-            const gh = createGitHub(secret.value);
+            const key = await resolveKeyWithSource(userId, "GITHUB_TOKEN");
+            if (!key) return { error: "No GITHUB_TOKEN configured" };
+            const gh = createGitHub(key.value);
             try {
               return await gh.listFiles(owner, repo, path);
             } catch (err) {
@@ -143,9 +143,9 @@ export async function runDeveloper(
             })
           ),
           execute: async ({ owner, repo, path }) => {
-            const secret = await getSecret(userId, "GITHUB_TOKEN");
-            if (!secret) return { error: "No GITHUB_TOKEN saved" };
-            const gh = createGitHub(secret.value);
+            const key = await resolveKeyWithSource(userId, "GITHUB_TOKEN");
+            if (!key) return { error: "No GITHUB_TOKEN configured" };
+            const gh = createGitHub(key.value);
             try {
               const file = await gh.getFile(owner, repo, path);
               // Decode base64 content for easier reading
@@ -170,9 +170,9 @@ export async function runDeveloper(
             })
           ),
           execute: async ({ query }) => {
-            const secret = await getSecret(userId, "GITHUB_TOKEN");
-            if (!secret) return { error: "No GITHUB_TOKEN saved" };
-            const gh = createGitHub(secret.value);
+            const key = await resolveKeyWithSource(userId, "GITHUB_TOKEN");
+            if (!key) return { error: "No GITHUB_TOKEN configured" };
+            const gh = createGitHub(key.value);
             try {
               return await gh.searchCode(query);
             } catch (err) {
@@ -191,9 +191,9 @@ export async function runDeveloper(
             })
           ),
           execute: async ({ owner, repo, state }) => {
-            const secret = await getSecret(userId, "GITHUB_TOKEN");
-            if (!secret) return { error: "No GITHUB_TOKEN saved" };
-            const gh = createGitHub(secret.value);
+            const key = await resolveKeyWithSource(userId, "GITHUB_TOKEN");
+            if (!key) return { error: "No GITHUB_TOKEN configured" };
+            const gh = createGitHub(key.value);
             try {
               return await gh.listIssues(owner, repo, state);
             } catch (err) {
@@ -213,9 +213,9 @@ export async function runDeveloper(
             })
           ),
           execute: async ({ owner, repo, title, body }) => {
-            const secret = await getSecret(userId, "GITHUB_TOKEN");
-            if (!secret) return { error: "No GITHUB_TOKEN saved" };
-            const gh = createGitHub(secret.value);
+            const key = await resolveKeyWithSource(userId, "GITHUB_TOKEN");
+            if (!key) return { error: "No GITHUB_TOKEN configured" };
+            const gh = createGitHub(key.value);
             try {
               return await gh.createIssue(owner, repo, title, body);
             } catch (err) {
@@ -230,9 +230,9 @@ export async function runDeveloper(
             z.object({ query: z.string() })
           ),
           execute: async ({ query }) => {
-            const secret = await getSecret(userId, "GITHUB_TOKEN");
-            if (!secret) return { error: "No GITHUB_TOKEN saved" };
-            const gh = createGitHub(secret.value);
+            const key = await resolveKeyWithSource(userId, "GITHUB_TOKEN");
+            if (!key) return { error: "No GITHUB_TOKEN configured" };
+            const gh = createGitHub(key.value);
             try {
               return await gh.searchUsers(query);
             } catch (err) {
