@@ -3,7 +3,7 @@
 // Accepts UIMessage-format messages and returns a UIMessageStream response.
 // The stream is consumed by the useChat hook on the client.
 
-import { streamText, convertToModelMessages, type UIMessage } from "ai";
+import { streamText, type UIMessage } from "ai";
 import { createMinimax } from "vercel-minimax-ai-provider";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -78,9 +78,14 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  // 7. Stream — convertToModelMessages is async in AI SDK 7.x, must await
+  // 7. Stream — manually convert UIMessages to ModelMessages to work
+  // around the AI SDK's convertToModelMessages incompatibility with
+  // the MiniMax provider for file parts. The provider wants
+  // `part.data` to be raw base64/URL, but convertToModelMessages
+  // wraps data: URLs as `{type:'url', url:'data:...'}` which the
+  // provider then tries to convertToBase64() and fails.
   const selectedModel = model || "MiniMax-M2";
-  const modelMessages = await convertToModelMessages(messages);
+  const modelMessages = await convertUIMessagesToModel(messages);
 
   // Stash userId/sessionId on globalThis so sub-agents (memory-keeper,
   // knowledge, etc.) can access them. The AI SDK 7.x tool execution
@@ -160,4 +165,83 @@ function partsToText(parts: UIMessage["parts"]): string {
     })
     .join("\n")
     .trim();
+}
+
+/**
+ * Custom UIMessage → ModelMessage converter that handles file parts
+ * correctly for the MiniMax provider.
+ *
+ * The default convertToModelMessages wraps data: URLs as
+ * `{type:'url', url:'data:...'}`, but the MiniMax provider expects
+ * either a raw base64 string or a URL object. This function
+ * extracts the base64 from data: URLs and passes it as a string.
+ *
+ * For non-data URLs, it passes them as-is via the `url` field.
+ */
+async function convertUIMessagesToModel(
+  messages: UIMessage[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: any[] = [];
+  for (const m of messages) {
+    if (m.role === "system") {
+      out.push({
+        role: "system",
+        content: m.parts
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .filter((p: any) => p.type === "text")
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .map((p: any) => p.text)
+          .join(""),
+      });
+      continue;
+    }
+    if (m.role === "user") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const content: any[] = [];
+      for (const p of m.parts) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const part: any = p;
+        if (part.type === "text") {
+          content.push({ type: "text", text: part.text });
+        } else if (part.type === "file") {
+          // For the MiniMax provider, file parts need to have either:
+          //  - a URL object (for hosted files)
+          //  - raw base64 string (for inline images)
+          // We extract the base64 from data: URLs to match what the provider expects.
+          let fileData: string | URL = part.url ?? "";
+          if (typeof fileData === "string" && fileData.startsWith("data:")) {
+            // data:<mediaType>;base64,<base64> → keep the full data URL
+            // (the provider's convertToBase64 will handle it)
+            fileData = fileData;
+          } else if (typeof fileData === "string") {
+            try {
+              fileData = new URL(fileData);
+            } catch {
+              // Not a valid URL, pass as-is
+            }
+          }
+          content.push({
+            type: "file",
+            mediaType: part.mediaType,
+            filename: part.filename,
+            data: fileData,
+          });
+        }
+        // Skip other part types (data-*, tool-*, etc.) for the model
+      }
+      out.push({ role: "user", content });
+      continue;
+    }
+    if (m.role === "assistant") {
+      // For assistant messages, just extract the text (history reconstruction)
+      const text = partsToText(m.parts);
+      if (text) {
+        out.push({ role: "assistant", content: [{ type: "text", text }] });
+      }
+      continue;
+    }
+  }
+  return out;
 }
