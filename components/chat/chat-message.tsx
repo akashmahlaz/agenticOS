@@ -2,7 +2,7 @@
 
 "use client";
 
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import {
   Message,
   MessageContent,
@@ -28,10 +28,15 @@ import {
 } from "@/components/ai-elements/tool";
 import type { AgentOSUIMessage } from "./types";
 import SubAgentActivity from "./subagent-activity";
+import InlineQuestion, { type Question } from "./inline-question";
 
 export interface ChatMessageProps {
   message: AgentOSUIMessage;
   isStreaming: boolean;
+  onSubmitAnswer?: (
+    questionId: string,
+    answers: Record<string, string | string[]>
+  ) => void;
 }
 
 function getTextContent(message: AgentOSUIMessage): string {
@@ -60,11 +65,13 @@ function getToolParts(message: AgentOSUIMessage) {
 
 function getDataParts(message: AgentOSUIMessage) {
   return message.parts.filter(
-    (p) => typeof p.type === "string" && p.type.startsWith("data-")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (p): p is any =>
+      typeof (p as any).type === "string" && (p as any).type.startsWith("data-")
   );
 }
 
-function ChatMessageImpl({ message, isStreaming }: ChatMessageProps) {
+function ChatMessageImpl({ message, isStreaming, onSubmitAnswer }: ChatMessageProps) {
   const text = getTextContent(message);
   const reasoning = getReasoningContent(message);
   const toolParts = getToolParts(message);
@@ -72,7 +79,20 @@ function ChatMessageImpl({ message, isStreaming }: ChatMessageProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const subagentData = dataParts.find((p) => p.type === "data-subagent")?.data as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sourcesData = dataParts.find((p) => p.type === "data-sources")?.data as any;
+  const sourcesData = dataParts.find((p) => (p as any).type === "data-sources")?.data as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const questionData = dataParts.find((p) => (p as any).type === "data-question")?.data as
+    | Question
+    | undefined;
+
+  const handleAnswer = useCallback(
+    (answers: Record<string, string | string[]>) => {
+      if (questionData && onSubmitAnswer) {
+        onSubmitAnswer(questionData.id, answers);
+      }
+    },
+    [questionData, onSubmitAnswer]
+  );
 
   return (
     <Message from={message.role}>
@@ -137,6 +157,11 @@ function ChatMessageImpl({ message, isStreaming }: ChatMessageProps) {
               ))}
             </SourcesContent>
           </Sources>
+        )}
+
+        {/* Inline question (agent asked the user) */}
+        {questionData && !isStreaming && onSubmitAnswer && (
+          <InlineQuestion question={questionData} onAnswer={handleAnswer} />
         )}
       </MessageContent>
     </Message>

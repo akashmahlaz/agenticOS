@@ -55,6 +55,44 @@ function emit(event: SubAgentProgressEvent) {
 }
 
 // ──────────────────────────────────────────────
+// Inline question event — when the agent calls askUser, the client
+// renders a structured form. The form's answer is sent back as a
+// new user message. Track the current question per-request so the
+// askUser tool can attach it to the data-question part.
+// ──────────────────────────────────────────────
+export interface InlineQuestion {
+  id: string;
+  prompt: string;
+  fields: Array<{
+    key: string;
+    label: string;
+    description?: string;
+    type: "text" | "select" | "multiselect";
+    options?: Array<{ value: string; label: string }>;
+    required?: boolean;
+    default?: string;
+  }>;
+}
+
+type QuestionListener = (q: InlineQuestion) => void;
+const questionListeners: Set<QuestionListener> = new Set();
+
+export function onInlineQuestion(listener: QuestionListener): () => void {
+  questionListeners.add(listener);
+  return () => questionListeners.delete(listener);
+}
+
+function emitQuestion(q: InlineQuestion) {
+  for (const l of questionListeners) {
+    try {
+      l(q);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+// ──────────────────────────────────────────────
 // Tools exposed to the main agent
 // Each tool delegates to a specialized sub-agent
 // ──────────────────────────────────────────────
@@ -471,6 +509,51 @@ export const subAgentTools: any = {
         output: result.output,
         error: result.error,
         durationMs: result.durationMs,
+      };
+    },
+  }),
+
+  // Ask the user a structured question. Emits a data-question part
+  // that the client renders as a form. The user's answer is sent back
+  // as a new user message, and the agent continues.
+  askUser: tool({
+    description:
+      "Pause and ask the user a structured question. Use this when you need specific input from the user before continuing — e.g. to confirm a search query, pick an option, or fill in a missing detail. The user sees a form in the chat and submits their answer. You will receive their answer in the next turn.",
+    inputSchema: zodSchema(
+      z.object({
+        prompt: z.string().describe("The question to show the user"),
+        fields: z
+          .array(
+            z.object({
+              key: z.string().describe("Unique key for this field's answer"),
+              label: z.string().describe("Label shown next to the field"),
+              description: z.string().optional().describe("Optional help text"),
+              type: z.enum(["text", "select", "multiselect"]),
+              options: z
+                .array(
+                  z.object({ value: z.string(), label: z.string() })
+                )
+                .optional()
+                .describe("Options for select/multiselect"),
+              required: z.boolean().optional(),
+              default: z.string().optional(),
+            })
+          )
+          .describe("Fields the user should fill in"),
+      })
+    ),
+    execute: async (input: { prompt: string; fields: InlineQuestion["fields"] }) => {
+      const question: InlineQuestion = {
+        id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        prompt: input.prompt,
+        fields: input.fields,
+      };
+      emitQuestion(question);
+      return {
+        asked: true,
+        questionId: question.id,
+        message:
+          "Question shown to the user. Wait for their answer in the next turn.",
       };
     },
   }),

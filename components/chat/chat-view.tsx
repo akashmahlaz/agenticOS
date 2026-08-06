@@ -103,6 +103,20 @@ export default function ChatView(props: ChatViewProps) {
     [stream]
   );
 
+  // When the user submits an inline-question form, send the answer
+  // back as a new user message so the agent can continue.
+  const handleSubmitAnswer = useCallback(
+    (questionId: string, answers: Record<string, string | string[]>) => {
+      const lines = Object.entries(answers).map(
+        ([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`
+      );
+      const text = `Answer to ${questionId}:\n${lines.join("\n")}`;
+      stream.setInput(text);
+      setTimeout(() => stream.submit(), 0);
+    },
+    [stream]
+  );
+
   const isEmpty = stream.messages.length === 0;
   const lastMessage = stream.messages[stream.messages.length - 1];
 
@@ -139,6 +153,7 @@ export default function ChatView(props: ChatViewProps) {
                   isStreaming={
                     stream.isStreaming && message === lastMessage
                   }
+                  onSubmitAnswer={handleSubmitAnswer}
                 />
                 {message.role === "assistant" && !stream.isStreaming && text && (
                   <MessageActionBar

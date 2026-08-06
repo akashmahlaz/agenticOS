@@ -8,7 +8,11 @@ import {
   createUIMessageStreamResponse,
   type UIMessageStreamWriter,
 } from "ai";
-import { onSubAgentProgress } from "@/lib/agents/orchestrator";
+import {
+  onSubAgentProgress,
+  onInlineQuestion,
+  type InlineQuestion,
+} from "@/lib/agents/orchestrator";
 import { autoCaptureFromTurn } from "@/lib/memory/manager";
 import { captureLearnings } from "@/lib/personalization/self-learning";
 import { db } from "@/lib/db";
@@ -75,6 +79,14 @@ export async function buildUIMessageStream(
         });
       });
 
+      // Subscribe to inline questions (agent asks the user a form)
+      const unsubQuestion = onInlineQuestion((q: InlineQuestion) => {
+        writer.write({
+          type: "data-question",
+          data: q,
+        });
+      });
+
       try {
         for await (const chunk of fullStream) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,6 +101,7 @@ export async function buildUIMessageStream(
         });
       } finally {
         unsub();
+        unsubQuestion();
 
         // Emit accumulated sources
         if (sources.length > 0) {

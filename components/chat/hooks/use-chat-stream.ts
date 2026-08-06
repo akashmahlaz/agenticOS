@@ -97,22 +97,41 @@ export function useChatStream(
     isTemporaryRef.current = !!opts.isTemporary;
   }, [opts.initialSessionId, opts.model, opts.isTemporary]);
 
-  const submit = useCallback(() => {
-    const text = input.trim();
-    if (!text) return;
-    if (chat.status === "streaming" || chat.status === "submitted") return;
-    chat.sendMessage(
-      { text },
-      {
-        body: {
-          sessionId: sessionIdRef.current,
-          model: modelRef.current,
-          isTemporary: isTemporaryRef.current,
-        },
+  const submit = useCallback(
+    (overrideText?: string, files?: Array<{ filename: string; mediaType: string; url: string }>) => {
+      const text = (overrideText ?? input).trim();
+      if (!text && (!files || files.length === 0)) return;
+      if (chat.status === "streaming" || chat.status === "submitted") return;
+
+      // Build message parts: text + file parts (AI SDK 5.x format)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const parts: any[] = [];
+      if (text) parts.push({ type: "text", text });
+      if (files) {
+        for (const f of files) {
+          parts.push({
+            type: "file",
+            mediaType: f.mediaType,
+            filename: f.filename,
+            url: f.url,
+          });
+        }
       }
-    );
-    setInput("");
-  }, [input, chat]);
+
+      chat.sendMessage(
+        { parts },
+        {
+          body: {
+            sessionId: sessionIdRef.current,
+            model: modelRef.current,
+            isTemporary: isTemporaryRef.current,
+          },
+        }
+      );
+      setInput("");
+    },
+    [input, chat]
+  );
 
   return {
     messages: chat.messages,
