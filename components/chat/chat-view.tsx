@@ -41,7 +41,7 @@ export default function ChatView(props: ChatViewProps) {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [showShareBanner, setShowShareBanner] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [useWebSearch, setUseWebSearch] = useState(false);
+  
 
   const stream = useChatStream({
     initialSessionId: props.initialSessionId,
@@ -128,13 +128,6 @@ export default function ChatView(props: ChatViewProps) {
         onExitTemp={props.onExitTemp}
         onStartTemp={props.onStartTemp}
         model={model}
-        onModelChange={setModel}
-        isShared={isShared}
-        shareToken={shareToken}
-        onToggleShare={handleToggleShare}
-        showShareBanner={showShareBanner}
-        copied={copied}
-        onCopyShare={handleCopyShare}
       />
 
       {isEmpty ? (
@@ -168,19 +161,13 @@ export default function ChatView(props: ChatViewProps) {
         </Conversation>
       )}
 
-      <div className="border-t bg-background/80 backdrop-blur-md">
-        <div className="max-w-3xl mx-auto px-3 py-3 sm:px-4 sm:py-4">
-          <ChatInput
-            value={stream.input}
-            onChange={stream.setInput}
-            onSubmit={stream.submit}
-            isStreaming={stream.isStreaming}
-            onStop={stream.stop}
-            useWebSearch={useWebSearch}
-            onToggleWebSearch={setUseWebSearch}
-          />
-        </div>
-      </div>
+      <ChatInput
+        value={stream.input}
+        onChange={stream.setInput}
+        onSubmit={stream.submit}
+        isStreaming={stream.isStreaming}
+        onStop={stream.stop}
+      />
     </div>
   );
 }
