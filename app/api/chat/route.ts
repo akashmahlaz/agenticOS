@@ -81,14 +81,22 @@ export async function POST(req: Request): Promise<Response> {
   // 7. Stream — convertToModelMessages is async in AI SDK 7.x, must await
   const selectedModel = model || "MiniMax-M2";
   const modelMessages = await convertToModelMessages(messages);
+
+  // Stash userId/sessionId on globalThis so sub-agents (memory-keeper,
+  // knowledge, etc.) can access them. The AI SDK 7.x tool execution
+  // context doesn't include user-supplied fields directly, so we use a
+  // per-request global. This is safe because each request is isolated
+  // in its own serverless function invocation.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).__currentChatUserId = userId;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).__currentChatSessionId = sessionId;
+
   const result = streamText({
     model: createMinimax({ apiKey })(selectedModel),
     system: systemPrompt,
     messages: modelMessages,
     tools,
-    // Pass userId + sessionId to tools via experimental_context
-    // so sub-agents (memory-keeper, knowledge, etc.) can identify the user
-    experimental_context: { userId, sessionId },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
 
