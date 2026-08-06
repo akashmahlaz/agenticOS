@@ -104,32 +104,19 @@ export function useChatStream(
       if (chat.status === "streaming" || chat.status === "submitted") return;
 
       // Build message parts: text + file parts (AI SDK 5.x format)
+      // The convertToModelMessages function expects {type:'file', url} where
+      // url can be a data: URL for inline content.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const parts: any[] = [];
       if (text) parts.push({ type: "text", text });
       if (files) {
         for (const f of files) {
-          // data: URLs need to be split into data + mediaType
-          // for the model provider. Otherwise it sees a string when
-          // it expects an object.
-          if (f.url.startsWith("data:")) {
-            const [meta, b64] = f.url.split(",");
-            const mt = meta.replace(/^data:/, "").replace(/;base64$/, "");
-            parts.push({
-              type: "file",
-              mediaType: f.mediaType || mt,
-              filename: f.filename,
-              data: b64,
-            });
-          } else {
-            // Remote URL — pass through
-            parts.push({
-              type: "file",
-              mediaType: f.mediaType,
-              filename: f.filename,
-              url: f.url,
-            });
-          }
+          parts.push({
+            type: "file",
+            mediaType: f.mediaType,
+            filename: f.filename,
+            url: f.url,
+          });
         }
       }
 
