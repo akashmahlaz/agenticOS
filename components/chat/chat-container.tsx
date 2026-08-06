@@ -1,8 +1,6 @@
-// ChatContainer — the main chat view
-// Uses useChat from @ai-sdk/react (the official Vercel AI SDK hook)
-// All session/temp state is passed in via props
-// The actual message rendering delegates to <MessageParts> which knows
-// how to render each UIMessage part type using official AI Elements.
+// ChatContainer — simple, reliable chat
+// Uses useChat from @ai-sdk/react
+// Falls back to simple text rendering if AI Elements fail
 
 "use client";
 
@@ -10,23 +8,9 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useAuth } from "@/components/auth-wrapper";
-import {
-  Conversation,
-  ConversationContent,
-  ConversationScrollButton,
-} from "@/components/ai-elements/conversation";
-import {
-  Message,
-  MessageContent,
-  MessageResponse,
-} from "@/components/ai-elements/message";
-import {
-  Reasoning,
-  ReasoningTrigger,
-  ReasoningContent,
-} from "@/components/ai-elements/reasoning";
-import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
-import { Sources, SourcesTrigger, SourcesContent, Source } from "@/components/ai-elements/sources";
+import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
+import { Message, MessageContent } from "@/components/ai-elements/message";
+import MessageActionBar from "./message-action-bar";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import {
   PromptInput,
@@ -35,42 +19,21 @@ import {
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTools,
-  PromptInputActionMenu,
-  PromptInputActionMenuTrigger,
-  PromptInputActionMenuContent,
-  PromptInputActionMenuItem,
-  PromptInputActionAddAttachments,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
 import {
-  ModelSelector,
-  ModelSelectorTrigger,
-  ModelSelectorContent,
-  ModelSelectorInput,
-  ModelSelectorList,
-  ModelSelectorEmpty,
-  ModelSelectorGroup,
-  ModelSelectorItem,
-  ModelSelectorName,
-} from "@/components/ai-elements/model-selector";
-import MessageActionBar from "./message-action-bar";
-import SubAgentActivity from "./subagent-activity";
-import InlineQuestion from "./inline-question";
-import {
-  BrainIcon,
-  CheckIcon,
-  MenuIcon,
-  MessageCircleDashedIcon,
+  BookOpenIcon,
+  CodeIcon,
   SearchIcon,
   SparklesIcon,
-  XIcon,
+  MenuIcon,
+  MessageCircleDashedIcon,
   ShareIcon,
-  CodeIcon,
-  BookOpenIcon,
+  CheckIcon,
+  XIcon,
 } from "lucide-react";
 
 const DEFAULT_MODEL = "MiniMax-M2";
-
 const LS_ACTIVE_SESSION = "agenticos-active-session";
 const LS_TEMP_MODE = "agenticos-temp-mode";
 
@@ -84,47 +47,18 @@ export interface ChatContainerProps {
 }
 
 const PROMPT_SUGGESTIONS = [
-  {
-    icon: SearchIcon,
-    title: "Research",
-    description: "Look up the latest on any topic",
-    prompt: "Research the latest developments in AI agents",
-  },
-  {
-    icon: CodeIcon,
-    title: "Code",
-    description: "Write, debug, or refactor code",
-    prompt: "Write a TypeScript function that flattens a nested array",
-  },
-  {
-    icon: BookOpenIcon,
-    title: "Learn",
-    description: "Explain a concept or skill",
-    prompt: "Explain how vector embeddings work for semantic search",
-  },
-  {
-    icon: SparklesIcon,
-    title: "Create",
-    description: "Brainstorm, draft, or design",
-    prompt: "Help me draft a PRD for a new feature",
-  },
+  { icon: SearchIcon, title: "Research", description: "Look up the latest on any topic", prompt: "Research the latest developments in AI agents" },
+  { icon: CodeIcon, title: "Code", description: "Write, debug, or refactor code", prompt: "Write a TypeScript function that flattens a nested array" },
+  { icon: BookOpenIcon, title: "Learn", description: "Explain a concept or skill", prompt: "Explain how vector embeddings work for semantic search" },
+  { icon: SparklesIcon, title: "Create", description: "Brainstorm, draft, or design", prompt: "Help me draft a PRD for a new feature" },
 ];
 
 export default function ChatContainer(props: ChatContainerProps) {
   const { user, token } = useAuth();
-  const [model, setModel] = useState(DEFAULT_MODEL);
   const [isShared, setIsShared] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
-  const [showShareBanner, setShowShareBanner] = useState(false);
-  const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
-  const [subagentEvents, setSubagentEvents] = useState<Array<Record<string, unknown>>>([]);
-  const [inlineQuestion, setInlineQuestion] = useState<{
-    id: string;
-    prompt: string;
-    fields: Array<{ name: string; label: string; type: "text" | "select" | "multiselect"; options?: string[]; required?: boolean }>;
-  } | null>(null);
 
-  // Refs for current sessionId (so useChat transport can read latest)
+  // Refs for current sessionId (so transport can read latest)
   const sessionIdRef = useRef<string | null>(props.initialSessionId);
   const isTempRef = useRef<boolean>(props.isTempMode);
 
@@ -151,7 +85,7 @@ export default function ChatContainer(props: ChatContainerProps) {
       .catch(() => {});
   }, [props.initialSessionId]);
 
-  // The transport: calls /api/chat with UIMessage format, expects UIMessageStream
+  // Transport with current auth + session
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -159,20 +93,21 @@ export default function ChatContainer(props: ChatContainerProps) {
         headers: () => ({ Authorization: `Bearer ${token ?? ""}` }),
         body: () => ({
           sessionId: sessionIdRef.current,
-          model,
+          model: DEFAULT_MODEL,
           isTemporary: isTempRef.current,
         }),
       }),
-    [token, model]
+    [token]
   );
 
   const { messages, sendMessage, status, stop, error, regenerate } = useChat<UIMessage>({
-    id: props.initialSessionId ?? undefined,
+    id: props.initialSessionId ?? "default",
     transport,
     onData: (part) => {
-      // Server emits custom data-* parts we care about
+      // Capture the server-created session id
       if (part.type === "data-session") {
-        const sid = (part.data as { sessionId: string }).sessionId;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sid = (part.data as any)?.sessionId;
         if (sid && sid !== sessionIdRef.current) {
           sessionIdRef.current = sid;
           try {
@@ -181,11 +116,6 @@ export default function ChatContainer(props: ChatContainerProps) {
           window.dispatchEvent(new Event("agenticos-refresh-sessions"));
           props.onSessionCreated?.(sid);
         }
-      } else if (part.type === "data-subagent") {
-        setSubagentEvents((prev) => [...prev, part.data as Record<string, unknown>]);
-      } else if (part.type === "data-question") {
-        const q = part.data as typeof inlineQuestion;
-        if (q) setInlineQuestion({ ...q, id: `q-${Date.now()}` });
       }
     },
     onError: (err) => {
@@ -195,43 +125,32 @@ export default function ChatContainer(props: ChatContainerProps) {
 
   const isStreaming = status === "streaming" || status === "submitted";
   const isEmpty = messages.length === 0;
-  const lastMessage = messages[messages.length - 1];
+
+  // Log state for debugging
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      console.log("[chat state]", { status, messageCount: messages.length, hasError: !!error });
+    }
+  }, [status, messages.length, error]);
 
   const handleSubmit = useCallback(
-    async (message: { text: string; files?: unknown[] }) => {
+    (message: { text: string; files?: unknown[] }) => {
       const text = (message?.text || "").trim();
-      if (!text && (!message?.files || message.files.length === 0)) return;
+      if (!text) return;
       if (isStreaming) return;
 
-      // Clear any pending inline question
-      setInlineQuestion(null);
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const files = (message.files as any[]) || [];
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sendMessage(
-        {
-          text: text || "Sent with attachments",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          files: files.map((f) => ({
-            type: "file",
-            mediaType: f.mediaType,
-            filename: f.filename,
-            // data: URL or remote URL
-            url: f.url ?? f.dataURL,
-          })) as any,
-        },
+        { text },
         {
           body: {
             sessionId: sessionIdRef.current,
-            model,
+            model: DEFAULT_MODEL,
             isTemporary: isTempRef.current,
           },
         }
       );
     },
-    [isStreaming, sendMessage, model]
+    [isStreaming, sendMessage]
   );
 
   const handleSuggestion = useCallback(
@@ -239,57 +158,6 @@ export default function ChatContainer(props: ChatContainerProps) {
       handleSubmit({ text: prompt, files: [] });
     },
     [handleSubmit]
-  );
-
-  const handleToggleShare = useCallback(async () => {
-    if (!sessionIdRef.current) return;
-    try {
-      const res = await fetch(`/api/sessions/${sessionIdRef.current}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ isShared: !isShared }),
-      });
-      const data = await res.json();
-      if (data) {
-        setIsShared(data.isShared ?? !isShared);
-        setShareToken(data.shareToken ?? null);
-        if (data.shareToken) setShowShareBanner(true);
-      }
-    } catch (err) {
-      console.error("Toggle share failed:", err);
-    }
-  }, [isShared]);
-
-  const handleCopyShare = useCallback(() => {
-    if (!shareToken) return;
-    const url = `${window.location.origin}/share/${shareToken}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [shareToken]);
-
-  const [copied, setCopied] = useState(false);
-
-  const handleInlineQuestionAnswer = useCallback(
-    (answer: Record<string, string | string[]>) => {
-      const answerText = Object.entries(answer)
-        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
-        .join("\n");
-      setInlineQuestion(null);
-      // Send the answer as a new user message
-      sendMessage(
-        { text: answerText },
-        {
-          body: {
-            sessionId: sessionIdRef.current,
-            model,
-            isTemporary: isTempRef.current,
-          },
-        }
-      );
-    },
-    [sendMessage, model]
   );
 
   return (
@@ -306,25 +174,10 @@ export default function ChatContainer(props: ChatContainerProps) {
               <MenuIcon size={18} />
             </button>
           )}
-          <ModelSelector open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
-            <ModelSelectorTrigger asChild>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-muted text-foreground text-[15px] font-medium transition-colors">
-                <SparklesIcon size={15} className="text-teal" />
-                <span className="truncate">agenticOS</span>
-              </button>
-            </ModelSelectorTrigger>
-            <ModelSelectorContent>
-              <ModelSelectorInput placeholder="Search models..." />
-              <ModelSelectorList>
-                <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
-                <ModelSelectorGroup heading="Available">
-                  <ModelSelectorItem value={DEFAULT_MODEL} onSelect={() => { setModel(DEFAULT_MODEL); setModelSelectorOpen(false); }}>
-                    <ModelSelectorName>MiniMax M2</ModelSelectorName>
-                  </ModelSelectorItem>
-                </ModelSelectorGroup>
-              </ModelSelectorList>
-            </ModelSelectorContent>
-          </ModelSelector>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/40">
+            <SparklesIcon size={15} className="text-teal" />
+            <span className="text-[15px] font-medium">agenticOS</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-1">
@@ -351,7 +204,21 @@ export default function ChatContainer(props: ChatContainerProps) {
               )}
               {props.initialSessionId && (
                 <button
-                  onClick={handleToggleShare}
+                  onClick={() => {
+                    if (!sessionIdRef.current) return;
+                    fetch(`/api/sessions/${sessionIdRef.current}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      credentials: "include",
+                      body: JSON.stringify({ isShared: !isShared }),
+                    })
+                      .then((r) => r.json())
+                      .then((data) => {
+                        setIsShared(data.isShared ?? !isShared);
+                        setShareToken(data.shareToken ?? null);
+                      })
+                      .catch(() => {});
+                  }}
                   className={`h-8 w-8 rounded-full flex items-center justify-center transition-colors ${
                     isShared
                       ? "bg-teal/15 text-teal border border-teal/30"
@@ -368,25 +235,19 @@ export default function ChatContainer(props: ChatContainerProps) {
         </div>
       </header>
 
-      {/* Share banner */}
-      {isShared && shareToken && showShareBanner && (
-        <div className="px-3 md:px-5 py-2 bg-teal/10 border-b border-teal/20 text-xs text-teal flex items-center justify-between gap-2">
-          <span className="truncate flex-1 font-mono text-[11px]">
-            {typeof window !== "undefined" ? window.location.origin : ""}/share/{shareToken}
-          </span>
-          <button
-            onClick={handleCopyShare}
-            className="px-2 py-1 rounded bg-teal/20 hover:bg-teal/30 transition-colors flex items-center gap-1"
-          >
-            {copied ? <CheckIcon size={11} /> : <ShareIcon size={11} />}
-            <span>{copied ? "Copied" : "Copy"}</span>
-          </button>
-        </div>
-      )}
-
-      {/* Conversation — takes the remaining space, input below it in normal flow */}
+      {/* Conversation */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {isEmpty && !isStreaming ? (
+        {error ? (
+          <div className="h-full flex flex-col items-center justify-center px-6 text-center">
+            <p className="text-sm text-coral">Chat error: {error.message}</p>
+            <button
+              onClick={() => regenerate?.()}
+              className="mt-3 px-3 py-1.5 text-sm rounded-md bg-foreground text-background"
+            >
+              Retry
+            </button>
+          </div>
+        ) : isEmpty && !isStreaming ? (
           <div className="h-full flex flex-col items-center justify-center px-4 pb-32">
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-teal/20 to-coral/20 flex items-center justify-center mb-3">
               <SparklesIcon size={22} className="text-teal" />
@@ -421,20 +282,11 @@ export default function ChatContainer(props: ChatContainerProps) {
               {messages.map((message, idx) => {
                 const isLast = idx === messages.length - 1;
                 return (
-                  <MessageParts
+                  <SimpleMessage
                     key={message.id}
                     message={message}
                     isStreaming={isStreaming && isLast}
-                    subagentEvents={
-                      message.role === "assistant" && isLast
-                        ? subagentEvents
-                        : undefined
-                    }
-                    onRegenerate={
-                      isLast && message.role === "assistant" && !isStreaming
-                        ? () => regenerate()
-                        : undefined
-                    }
+                    onRegenerate={isLast && !isStreaming && message.role === "assistant" ? () => regenerate?.() : undefined}
                   />
                 );
               })}
@@ -444,24 +296,11 @@ export default function ChatContainer(props: ChatContainerProps) {
         )}
       </div>
 
-      {/* Inline question UI (if any) */}
-      {inlineQuestion && (
-        <div className="px-3 md:px-5 py-3 border-t bg-background">
-          <InlineQuestion
-            question={inlineQuestion}
-            onSubmit={handleInlineQuestionAnswer}
-            disabled={isStreaming}
-          />
-        </div>
-      )}
-
-      {/* Input — in normal flow at the bottom, NOT fixed. Sticky border-t separates it from the conversation. */}
+      {/* Input — in normal flow at the bottom */}
       <div className="flex-shrink-0 border-t bg-background/95 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-3 md:px-5 py-3">
           <PromptInput
             onSubmit={handleSubmit as (m: PromptInputMessage) => void}
-            globalDrop
-            multiple
             className="relative border border-foreground/10 bg-input-elevated shadow-[0_2px_24px_-8px_rgba(0,0,0,0.12)] dark:shadow-[0_4px_28px_-4px_rgba(0,0,0,0.4)] focus-within:border-foreground/30 rounded-[28px] transition-all"
           >
             <PromptInputBody>
@@ -472,18 +311,7 @@ export default function ChatContainer(props: ChatContainerProps) {
               />
             </PromptInputBody>
             <PromptInputFooter className="px-2 pb-2 pt-0">
-              <PromptInputTools className="gap-0.5">
-                <PromptInputActionMenu>
-                  <PromptInputActionMenuTrigger />
-                  <PromptInputActionMenuContent>
-                    <PromptInputActionMenuItem onClick={() => {/* placeholder */}}>
-                      <BrainIcon size={14} className="mr-2" />
-                      Deep Research
-                    </PromptInputActionMenuItem>
-                    <PromptInputActionAddAttachments />
-                  </PromptInputActionMenuContent>
-                </PromptInputActionMenu>
-              </PromptInputTools>
+              <PromptInputTools className="gap-0.5" />
               <PromptInputSubmit
                 status={isStreaming ? "streaming" : "ready"}
                 onClick={(e) => {
@@ -506,132 +334,208 @@ export default function ChatContainer(props: ChatContainerProps) {
 }
 
 // ──────────────────────────────────────────────
-// MessageParts — renders a single message using AI Element components
-// Maps UIMessage parts (text, reasoning, tool-*, source-url, data-*) to JSX
+// SimpleMessage — renders a single message with plain text + markdown
+// Avoids all the complex AI Elements that could fail
 // ──────────────────────────────────────────────
 
-interface MessagePartsProps {
+interface SimpleMessageProps {
   message: UIMessage;
   isStreaming: boolean;
-  subagentEvents?: Array<Record<string, unknown>>;
   onRegenerate?: () => void;
 }
 
-function MessageParts({ message, isStreaming, subagentEvents, onRegenerate }: MessagePartsProps) {
+function SimpleMessage({ message, isStreaming, onRegenerate }: SimpleMessageProps) {
   const isUser = message.role === "user";
 
-  // Consolidate reasoning parts
-  const reasoningParts = message.parts.filter((p) => p.type === "reasoning");
-  const reasoningText = reasoningParts
+  // Extract text from all parts
+  const fullText = message.parts
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((p: any) => p.text)
-    .filter(Boolean)
-    .join("\n\n");
-  const lastPart = message.parts[message.parts.length - 1];
-  const isReasoningStreaming =
-    isStreaming && !isUser && lastPart?.type === "reasoning";
+    .filter((p: any) => p.type === "text")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((p: any) => p.text || "")
+    .join("");
 
-  // Extract tool parts and source parts
-  const textParts = message.parts.filter((p) => p.type === "text");
-  const toolParts = message.parts.filter(
+  // Extract reasoning
+  const reasoningText = message.parts
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (p: any) => typeof p.type === "string" && p.type.startsWith("tool-") || p.type === "dynamic-tool"
-  );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sourceParts = message.parts.filter((p: any) => p.type === "source-url");
+    .filter((p: any) => p.type === "reasoning")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((p: any) => p.text || "")
+    .join("\n\n");
 
   return (
     <Message from={message.role}>
       <MessageContent>
-        {/* Reasoning block — auto-opens while streaming, auto-closes when done */}
+        {/* Reasoning — collapsible, shows while streaming */}
         {reasoningText && (
-          <Reasoning isStreaming={isReasoningStreaming} defaultOpen={isReasoningStreaming}>
-            <ReasoningTrigger />
-            <ReasoningContent>{reasoningText}</ReasoningContent>
-          </Reasoning>
+          <details
+            open={isStreaming}
+            className="mb-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2"
+          >
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground flex items-center gap-2">
+              {isStreaming ? (
+                <Shimmer duration={1.5}>Thinking…</Shimmer>
+              ) : (
+                <span>Thought process</span>
+              )}
+            </summary>
+            <div className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap">
+              {reasoningText}
+            </div>
+          </details>
         )}
 
-        {/* Tool calls — official AI Elements Tool component */}
-        {toolParts.map((part, i) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const tp = part as any;
-          return (
-            <Tool key={`${message.id}-tool-${i}`} defaultOpen={isStreaming}>
-              <ToolHeader
-                type={tp.type}
-                state={tp.state}
-                title={tp.toolName ?? "Tool"}
-              />
-              <ToolContent>
-                {tp.input !== undefined && <ToolInput input={tp.input} />}
-                {tp.output !== undefined && <ToolOutput output={tp.output} errorText={tp.errorText} />}
-              </ToolContent>
-            </Tool>
-          );
-        })}
-
-        {/* Sources — collapsible citation list */}
-        {sourceParts.length > 0 && (
-          <Sources>
-            <SourcesTrigger count={sourceParts.length} />
-            <SourcesContent>
-              {sourceParts.map((part, i) => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const sp = part as any;
-                return (
-                  <Source key={`${message.id}-src-${i}`} href={sp.url} title={sp.title ?? sp.url}>
-                    {sp.title ?? sp.url}
-                  </Source>
-                );
-              })}
-            </SourcesContent>
-          </Sources>
-        )}
-
-        {/* Sub-agent activity (delegation timeline) */}
-        {subagentEvents && subagentEvents.length > 0 && (
-          <SubAgentActivity
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            events={subagentEvents as any}
-            isStreaming={isStreaming}
-          />
-        )}
-
-        {/* Text content (markdown via Streamdown) */}
-        {textParts.map((part, i) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const tp = part as any;
-          if (!tp.text) return null;
-          if (isUser) {
-            return (
-              <p key={`${message.id}-text-${i}`} className="text-sm leading-relaxed whitespace-pre-wrap">
-                {tp.text}
-              </p>
-            );
-          }
-          return (
-            <MessageResponse key={`${message.id}-text-${i}`}>{tp.text}</MessageResponse>
-          );
-        })}
-
-        {/* Empty content + streaming → Shimmer */}
-        {textParts.length === 0 &&
-          reasoningText === "" &&
-          toolParts.length === 0 &&
-          isStreaming && (
-            <Shimmer duration={1}>Thinking…</Shimmer>
-          )}
+        {/* Text content */}
+        {fullText ? (
+          isUser ? (
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{fullText}</p>
+          ) : (
+            <MarkdownText text={fullText} />
+          )
+        ) : isStreaming ? (
+          <Shimmer duration={1}>Thinking…</Shimmer>
+        ) : null}
 
         {/* Action bar for finished AI messages */}
-        {!isUser && !isStreaming && message.parts.some((p) => p.type === "text" && (p as { text?: string }).text) && (
+        {!isUser && !isStreaming && fullText && onRegenerate && (
           <MessageActionBar
             messageId={message.id}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            content={textParts.map((p: any) => p.text).join("")}
+            content={fullText}
             onRegenerate={onRegenerate}
           />
         )}
       </MessageContent>
     </Message>
   );
+}
+
+// Simple markdown renderer — handles basic formatting without dependencies
+function MarkdownText({ text }: { text: string }) {
+  // Split into blocks (paragraphs, code blocks, lists)
+  const blocks = text.split(/\n\n+/);
+
+  return (
+    <div className="prose prose-sm dark:prose-invert max-w-none">
+      {blocks.map((block, i) => {
+        // Code block
+        if (block.startsWith("```")) {
+          const match = block.match(/^```(\w+)?\n([\s\S]+?)\n```$/);
+          if (match) {
+            return (
+              <pre key={i} className="bg-muted/50 border border-border rounded-lg p-3 overflow-x-auto text-xs my-2">
+                <code className="text-foreground">{match[2]}</code>
+              </pre>
+            );
+          }
+        }
+
+        // List
+        if (block.match(/^[\-\*]\s/m)) {
+          const items = block.split(/\n/).filter(Boolean);
+          return (
+            <ul key={i} className="list-disc pl-5 my-2 space-y-1">
+              {items.map((item, j) => (
+                <li key={j} className="text-sm">{renderInline(item.replace(/^[\-\*]\s/, ""))}</li>
+              ))}
+            </ul>
+          );
+        }
+
+        // Numbered list
+        if (block.match(/^\d+\.\s/m)) {
+          const items = block.split(/\n/).filter(Boolean);
+          return (
+            <ol key={i} className="list-decimal pl-5 my-2 space-y-1">
+              {items.map((item, j) => (
+                <li key={j} className="text-sm">{renderInline(item.replace(/^\d+\.\s/, ""))}</li>
+              ))}
+            </ol>
+          );
+        }
+
+        // Heading
+        if (block.startsWith("# ")) {
+          return <h1 key={i} className="text-lg font-semibold mt-3 mb-2">{renderInline(block.slice(2))}</h1>;
+        }
+        if (block.startsWith("## ")) {
+          return <h2 key={i} className="text-base font-semibold mt-3 mb-1">{renderInline(block.slice(3))}</h2>;
+        }
+        if (block.startsWith("### ")) {
+          return <h3 key={i} className="text-sm font-semibold mt-2 mb-1">{renderInline(block.slice(4))}</h3>;
+        }
+
+        // Default paragraph
+        return <p key={i} className="text-sm leading-relaxed my-2">{renderInline(block)}</p>;
+      })}
+    </div>
+  );
+}
+
+// Inline markdown: **bold**, *italic*, `code`, [text](url)
+function renderInline(text: string): React.ReactNode {
+  // First handle inline code (so we don't process markdown inside it)
+  const codeRegex = /`([^`]+)`/g;
+  const parts: React.ReactNode[] = [];
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+  let key = 0;
+  while ((m = codeRegex.exec(text)) !== null) {
+    if (m.index > lastIdx) {
+      parts.push(renderTextFormatting(text.slice(lastIdx, m.index), key));
+      key++;
+    }
+    parts.push(
+      <code key={key++} className="px-1 py-0.5 rounded bg-muted/50 border border-border/50 text-xs font-mono">
+        {m[1]}
+      </code>
+    );
+    lastIdx = m.index + m[0].length;
+  }
+  if (lastIdx < text.length) {
+    parts.push(renderTextFormatting(text.slice(lastIdx), key));
+  }
+  return parts.length === 1 ? parts[0] : <>{parts}</>;
+}
+
+function renderTextFormatting(text: string, key: number): React.ReactNode {
+  // Handle **bold**, *italic*, [text](url)
+  const nodes: React.ReactNode[] = [];
+  let remaining = text;
+  let subKey = 0;
+
+  // Pattern: **bold**, *italic*, [text](url)
+  const combined = /(\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+  while ((m = combined.exec(remaining)) !== null) {
+    if (m.index > lastIdx) {
+      nodes.push(remaining.slice(lastIdx, m.index));
+    }
+    const match = m[0];
+    if (match.startsWith("**")) {
+      nodes.push(<strong key={`${key}-${subKey++}`}>{match.slice(2, -2)}</strong>);
+    } else if (match.startsWith("*")) {
+      nodes.push(<em key={`${key}-${subKey++}`}>{match.slice(1, -1)}</em>);
+    } else if (match.startsWith("[")) {
+      const linkMatch = match.match(/\[([^\]]+)\]\(([^)]+)\)/);
+      if (linkMatch) {
+        nodes.push(
+          <a
+            key={`${key}-${subKey++}`}
+            href={linkMatch[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-teal underline"
+          >
+            {linkMatch[1]}
+          </a>
+        );
+      }
+    }
+    lastIdx = m.index + m[0].length;
+  }
+  if (lastIdx < remaining.length) {
+    nodes.push(remaining.slice(lastIdx));
+  }
+  return nodes.length === 1 ? nodes[0] : <>{nodes}</>;
 }
