@@ -10,7 +10,9 @@ export type SubAgentId =
   | "browser"
   | "knowledge"
   | "operator"
-  | "personalization";
+  | "personalization"
+  | "leadgen"
+  | "developer";
 
 export interface SubAgentResult {
   agent: SubAgentId;
@@ -27,9 +29,10 @@ export interface SubAgentCallOptions {
   task: string;
   context?: string;
   onProgress?: (event: {
-    type: "started" | "thinking" | "tool-call" | "tool-result" | "done";
+    type: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
     message: string;
     toolName?: string;
+    result?: string;
   }) => void;
   model?: string;
   maxSteps?: number;

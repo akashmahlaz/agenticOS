@@ -97,6 +97,26 @@ export async function POST(req: Request): Promise<Response> {
     system: systemPrompt,
     messages: modelMessages,
     tools,
+    // Agentic loop: keep working until the task is complete OR
+    // we hit the safety limit of 20 steps. The agent signals
+    // completion by including `<!-- TASK_COMPLETE -->` in its
+    // final text. We check the last assistant text for that
+    // marker, falling back to the step cap.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    stopWhen: (async (event: any) => {
+      const steps = event?.steps ?? [];
+      if (steps.length >= 20) return true;
+      // Check the most recent assistant text for the completion marker
+      for (let i = steps.length - 1; i >= 0; i--) {
+        const step = steps[i];
+        const text = step?.content?.find?.((p: any) => p.type === "text")?.text;
+        if (typeof text === "string" && text.includes("<!-- TASK_COMPLETE -->")) {
+          return true;
+        }
+      }
+      return false;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
 

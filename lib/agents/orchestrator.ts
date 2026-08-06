@@ -9,6 +9,8 @@ import { runMemoryKeeper } from "./memory-keeper";
 import { runBrowser } from "./browser";
 import { runKnowledge } from "./knowledge";
 import { runOperator } from "./operator";
+import { runLeadGen } from "./leadgen";
+import { runDeveloper } from "./developer";
 import type { SubAgentId } from "./types";
 
 // Re-export sub-agent runners
@@ -18,6 +20,8 @@ export { runMemoryKeeper } from "./memory-keeper";
 export { runBrowser } from "./browser";
 export { runKnowledge } from "./knowledge";
 export { runOperator } from "./operator";
+export { runLeadGen } from "./leadgen";
+export { runDeveloper } from "./developer";
 
 // Progress event type — matches the existing chat-container event types
 export interface SubAgentProgressEvent {
@@ -359,6 +363,110 @@ export const subAgentTools: any = {
       });
       return {
         agent: "operator",
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        durationMs: result.durationMs,
+      };
+    },
+  }),
+
+  delegateToLeadGen: tool({
+    description:
+      "Delegate a lead-generation task to the Lead Gen sub-agent. Use this when the user wants to find professional contacts (emails, phone numbers, LinkedIn) using RocketReach. The sub-agent has search and lookup tools, and uses the user's stored ROCKETREACH_API_KEY. Examples: 'find CTOs at SaaS startups in Germany', 'get contact info for John Smith at Acme Corp', 'find VP Sales in fintech in NYC'.",
+    inputSchema: zodSchema(
+      z.object({
+        task: z.string().describe("The lead-gen task: what contacts to find and any criteria"),
+        context: z.string().optional().describe("Additional context (e.g. why we need these contacts, preferred industries)"),
+      })
+    ),
+    execute: async (input: { task: string; context?: string }, options?: any) => {
+      const userId = options?.experimental_context?.userId || (globalThis as any).__currentChatUserId;
+      if (!userId) return { agent: "leadgen", success: false, output: "", error: "No userId in context" };
+      emit({
+        type: "subagent",
+        agent: "leadgen" as any,
+        task: input.task,
+        status: "started",
+        message: `Lead Gen delegated: ${input.task}`,
+      });
+      const result = await runLeadGen({
+        task: input.task,
+        context: input.context,
+        userId,
+        onProgress: (p) =>
+          emit({
+            type: "subagent",
+            agent: "leadgen" as any,
+            task: input.task,
+            status: p.type,
+            message: p.message,
+            toolName: p.toolName,
+          }),
+      });
+      emit({
+        type: "subagent",
+        agent: "leadgen" as any,
+        task: input.task,
+        status: result.success ? "done" : "error",
+        message: result.success ? "Lead gen complete" : `Error: ${result.error}`,
+        result: result.output,
+        durationMs: result.durationMs,
+      });
+      return {
+        agent: "leadgen",
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        durationMs: result.durationMs,
+      };
+    },
+  }),
+
+  delegateToDeveloper: tool({
+    description:
+      "Delegate a code task to the Developer sub-agent. Use this when the user wants to work with GitHub repos: read code, search across repos, list files, find issues, create new issues, etc. The sub-agent uses the user's stored GITHUB_TOKEN. Examples: 'find the auth code in my agenticOS repo', 'create an issue in repo X for this bug', 'list my repos'.",
+    inputSchema: zodSchema(
+      z.object({
+        task: z.string().describe("The code task: what to find, read, or change"),
+        context: z.string().optional().describe("Additional context like repo name, file path"),
+      })
+    ),
+    execute: async (input: { task: string; context?: string }, options?: any) => {
+      const userId = options?.experimental_context?.userId || (globalThis as any).__currentChatUserId;
+      if (!userId) return { agent: "developer", success: false, output: "", error: "No userId in context" };
+      emit({
+        type: "subagent",
+        agent: "developer" as any,
+        task: input.task,
+        status: "started",
+        message: `Developer delegated: ${input.task}`,
+      });
+      const result = await runDeveloper({
+        task: input.task,
+        context: input.context,
+        userId,
+        onProgress: (p) =>
+          emit({
+            type: "subagent",
+            agent: "developer" as any,
+            task: input.task,
+            status: p.type,
+            message: p.message,
+            toolName: p.toolName,
+          }),
+      });
+      emit({
+        type: "subagent",
+        agent: "developer" as any,
+        task: input.task,
+        status: result.success ? "done" : "error",
+        message: result.success ? "Code work complete" : `Error: ${result.error}`,
+        result: result.output,
+        durationMs: result.durationMs,
+      });
+      return {
+        agent: "developer",
         success: result.success,
         output: result.output,
         error: result.error,
