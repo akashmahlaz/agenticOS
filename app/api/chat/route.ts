@@ -86,6 +86,9 @@ export async function POST(req: Request): Promise<Response> {
     system: systemPrompt,
     messages: modelMessages,
     tools,
+    // Pass userId + sessionId to tools via experimental_context
+    // so sub-agents (memory-keeper, knowledge, etc.) can identify the user
+    experimental_context: { userId, sessionId },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
 
