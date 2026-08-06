@@ -206,15 +206,17 @@ async function convertUIMessagesToModel(
         if (part.type === "text") {
           content.push({ type: "text", text: part.text });
         } else if (part.type === "file") {
-          // For the MiniMax provider, file parts need to have either:
-          //  - a URL object (for hosted files)
-          //  - raw base64 string (for inline images)
-          // We extract the base64 from data: URLs to match what the provider expects.
+          // The MiniMax provider prepends `data:${mediaType};base64,`
+          // to whatever we pass as `part.data`. If we pass a data URL
+          // (which already starts with `data:`), the result is a
+          // double-prefixed broken string. Solution: extract just the
+          // base64 portion for the provider to wrap.
           let fileData: string | URL = part.url ?? "";
           if (typeof fileData === "string" && fileData.startsWith("data:")) {
-            // data:<mediaType>;base64,<base64> → keep the full data URL
-            // (the provider's convertToBase64 will handle it)
-            fileData = fileData;
+            const comma = fileData.indexOf(",");
+            if (comma >= 0 && fileData.includes(";base64")) {
+              fileData = fileData.slice(comma + 1);
+            }
           } else if (typeof fileData === "string") {
             try {
               fileData = new URL(fileData);
