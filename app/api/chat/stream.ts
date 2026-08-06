@@ -79,8 +79,19 @@ export async function buildUIMessageStream(
         for await (const chunk of fullStream) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const c = chunk as any;
-          await handleStreamChunk(c, writer, toolCalls, sources, meta);
+          try {
+            await handleStreamChunk(c, writer, toolCalls, sources, meta);
+          } catch (chunkErr) {
+            console.error("[chat] handleStreamChunk error:", chunkErr, "chunk:", c);
+            throw chunkErr;
+          }
         }
+      } catch (streamErr) {
+        console.error("[chat] stream error:", streamErr);
+        writer.write({
+          type: "data-error",
+          data: { message: streamErr instanceof Error ? `${streamErr.message}\n${streamErr.stack}` : String(streamErr) },
+        });
       } finally {
         unsub();
 
