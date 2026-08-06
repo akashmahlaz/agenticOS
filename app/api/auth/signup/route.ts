@@ -54,13 +54,21 @@ export async function POST(req: Request) {
 
     const token = signToken({ userId: user.id, email: user.email });
 
-    return NextResponse.json(
+    const res = NextResponse.json(
       {
         user: { id: user.id, email: user.email, name: user.name },
         token,
       },
       { status: 201 }
     );
+    // Mirror token to cookie so server-rendered pages can auth.
+    res.cookies.set("auth-token", token, {
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60,
+      sameSite: "lax",
+      httpOnly: false,
+    });
+    return res;
   } catch (err) {
     console.error("[signup] Error:", err);
     return NextResponse.json({ error: "Signup failed" }, { status: 500 });

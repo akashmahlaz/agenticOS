@@ -34,10 +34,21 @@ export async function POST(req: Request) {
 
     const token = signToken({ userId: user.id, email: user.email });
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       user: { id: user.id, email: user.email, name: user.name },
       token,
     });
+    // Mirror token to cookie so server-rendered pages (e.g. /c/[id]) can
+    // authenticate the user. Path=/, 7d expiry matches the JWT expiry.
+    res.cookies.set("auth-token", token, {
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60,
+      sameSite: "lax",
+      // HttpOnly is false so the client can read it for Authorization
+      // headers. The token is already short-lived (7d) JWT.
+      httpOnly: false,
+    });
+    return res;
   } catch (err) {
     console.error("[login] Error:", err);
     return NextResponse.json({ error: "Login failed" }, { status: 500 });
