@@ -721,8 +721,11 @@ export default function ChatContainer({
           buffer = lines.pop() || "";
           for (const line of lines) {
             if (!line.trim()) continue;
+            // Strip SSE prefix "data: " (the new API uses Server-Sent Events format)
+            const jsonStr = line.startsWith("data: ") ? line.slice(6) : line;
+            if (jsonStr === "[DONE]") continue;
             try {
-              const data = JSON.parse(line);
+              const data = JSON.parse(jsonStr);
               if (data.type === "text-delta") {
                 fullText += data.delta;
                 setMessages((prev) => {
@@ -1025,13 +1028,6 @@ export default function ChatContainer({
                   isStreaming={isStreaming && msg.id === messages[messages.length - 1].id}
                 />
               ))}
-              {isStreaming && messages.length > 0 && (
-                <Message from="assistant">
-                  <MessageContent>
-                    <Shimmer duration={1}>Thinking…</Shimmer>
-                  </MessageContent>
-                </Message>
-              )}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>
