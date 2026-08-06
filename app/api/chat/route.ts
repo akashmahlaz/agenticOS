@@ -78,12 +78,13 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  // 7. Stream
+  // 7. Stream — convertToModelMessages is async in AI SDK 7.x, must await
   const selectedModel = model || "MiniMax-M2";
+  const modelMessages = await convertToModelMessages(messages);
   const result = streamText({
     model: createMinimax({ apiKey })(selectedModel),
     system: systemPrompt,
-    messages: convertToModelMessages(messages),
+    messages: modelMessages,
     tools,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
