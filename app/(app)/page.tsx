@@ -6,7 +6,7 @@
 // conditions that caused the first-message-of-new-chat bug.
 
 import { useState, useCallback, useEffect } from "react";
-import Sidebar from "@/components/chat/sidebar";
+import Sidebar from "@/components/chat/sidebar/index";
 import ChatContainer from "@/components/chat/chat-container";
 import AuthGate from "@/components/auth-gate";
 
