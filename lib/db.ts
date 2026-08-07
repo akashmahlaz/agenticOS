@@ -10,8 +10,14 @@ const globalForPrisma = globalThis as unknown as {
 
 function createPrismaClient() {
   const connectionString = process.env.DATABASE_URL;
+  
+  // During build phase (no env vars), return a placeholder
+  // The actual client will be created at runtime
   if (!connectionString) {
-    throw new Error("DATABASE_URL environment variable is not set");
+    console.warn("[db] DATABASE_URL not set - using placeholder client (build phase?)");
+    const adapter = new PrismaPg("postgresql://placeholder:placeholder@placeholder/placeholder");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return new (PrismaClient as any)({ adapter });
   }
 
   const adapter = new PrismaPg(connectionString);
