@@ -125,10 +125,13 @@ export async function POST(req: Request): Promise<Response> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
 
-  // 8. Wrap into UIMessageStream response
+  // 8. Wrap into UIMessageStream response. We pass the whole `result`
+  //    object (not `result.fullStream`) so buildUIMessageStream can use
+  //    `result.toUIMessageStream({ sendReasoning: true })` — the official
+  //    AI SDK pattern that emits proper start/delta/end lifecycle chunks.
   return buildUIMessageStream(
     { userId, sessionId, messages: incomingMessages, model: selectedModel },
-    result.fullStream
+    result
   );
 }
 

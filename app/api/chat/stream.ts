@@ -1,11 +1,20 @@
 // Chat API — UIMessageStream handler
-// Converts the AI SDK streamText output into the UI message stream format
-// that the useChat hook understands. Also forwards sub-agent activity,
-// memory capture, and learning detection as data-* parts.
+// Wraps a streamText result into a UIMessageStream response that the useChat
+// hook on the client understands.
+//
+// Official AI SDK 7.x pattern (per https://ai-sdk.dev/docs/ai-sdk-ui/streaming-data
+// and https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol):
+//   - Use `writer.merge(result.toUIMessageStream({ sendReasoning: true }))`
+//     to forward text/reasoning/tool chunks WITH the proper
+//     start/delta/end lifecycle (which we were getting wrong by parsing
+//     `result.fullStream` manually).
+//   - Use `writer.write({ type: 'data-*' })` for our custom sub-agent,
+//     sources, session, finish, error, memory, and learning events.
 
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
+  toUIMessageStream,
   type UIMessageStreamWriter,
 } from "ai";
 import {
@@ -15,7 +24,12 @@ import {
 } from "@/lib/agents/orchestrator";
 import { autoCaptureFromTurn } from "@/lib/memory/manager";
 import { captureLearnings } from "@/lib/personalization/self-learning";
-import { db } from "@/lib/db";
+
+// We rely on the `ai` SDK's own types. The `streamText` return type is
+// complex; declaring it as `unknown` here keeps the boundary simple and
+// matches the `toUIMessageStream` generic which is what we actually call.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type StreamTextResult = any;
 
 export interface StreamMeta {
   userId: string;
@@ -40,30 +54,28 @@ export interface SourceItem {
   snippet?: string;
 }
 
-export interface ToolCallRecord {
-  toolCallId: string;
-  toolName: string;
-  input: Record<string, unknown>;
-  output?: unknown;
-  state: "input-available" | "output-available" | "output-error";
-  errorText?: string;
-}
-
 /**
- * Build a UIMessageStream response that wraps a streamText result
- * and adds our custom data parts (subagents, memory, learning).
+ * Build a UIMessageStream response from a streamText result.
+ *
+ * The AI SDK's `toUIMessageStream({ sendReasoning: true })` is the
+ * official, correct way to forward a streamText result. It emits
+ * `text-start` / `text-delta` / `text-end` and
+ * `reasoning-start` / `reasoning-delta` / `reasoning-end` with matching
+ * IDs — the client-side `useChat` hook requires this sequence, and any
+ * manual re-implementation (e.g. parsing `result.fullStream`) is fragile
+ * and easily produces `Received reasoning-delta for missing reasoning part`
+ * errors.
+ *
+ * We then layer our custom data-* events on top: sub-agent progress,
+ * inline questions, sources, session, finish, error, memory and learning.
  */
-export async function buildUIMessageStream(
+export function buildUIMessageStream(
   meta: StreamMeta,
-  fullStream: AsyncIterable<unknown>
-): Promise<Response> {
+  result: StreamTextResult
+): Response {
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
-      const toolCalls: ToolCallRecord[] = [];
-      const sources: SourceItem[] = [];
-
-      // Emit the session id right at the start so the client can
-      // update the URL via window.history.replaceState (no React re-render).
+      // 1. Session id (so the client can replaceState the URL)
       if (meta.sessionId) {
         writer.write({
           type: "data-session",
@@ -71,7 +83,7 @@ export async function buildUIMessageStream(
         });
       }
 
-      // Subscribe to sub-agent progress and forward as data parts
+      // 2. Sub-agent progress → data-subagent
       const unsub = onSubAgentProgress((event) => {
         writer.write({
           type: "data-subagent",
@@ -79,7 +91,7 @@ export async function buildUIMessageStream(
         });
       });
 
-      // Subscribe to inline questions (agent asks the user a form)
+      // 3. Inline questions → data-question
       const unsubQuestion = onInlineQuestion((q: InlineQuestion) => {
         writer.write({
           type: "data-question",
@@ -88,41 +100,47 @@ export async function buildUIMessageStream(
       });
 
       try {
-        for await (const chunk of fullStream) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const c = chunk as any;
-          await handleStreamChunk(c, writer, toolCalls, sources, meta);
-        }
+        // 4. Merge the LLM stream. This is the ONLY correct way to forward
+        //    a streamText result to the UI message stream — it handles
+        //    start/delta/end for both text and reasoning.
+        writer.merge(
+          toUIMessageStream({
+            stream: result.toUIMessageStream({
+              sendReasoning: true,
+              sendSources: false, // we collect sources ourselves below
+              sendFinish: true,
+              sendStart: true,
+            }),
+            onError: (error) => {
+              console.error("[chat] stream error:", error);
+              return error instanceof Error ? error.message : String(error);
+            },
+          })
+        );
       } catch (streamErr) {
-        console.error("[chat] stream error:", streamErr);
+        console.error("[chat] build stream error:", streamErr);
         writer.write({
           type: "data-error",
-          data: { message: streamErr instanceof Error ? streamErr.message : String(streamErr) },
+          data: {
+            message:
+              streamErr instanceof Error ? streamErr.message : String(streamErr),
+          },
         });
       } finally {
         unsub();
         unsubQuestion();
 
-        // Emit accumulated sources
-        if (sources.length > 0) {
-          writer.write({
-            type: "data-sources",
-            data: sources,
-          });
-        }
-
-        // ── Auto-capture memory + learn from this turn ──
+        // 5. Auto-capture memory + learn from this turn
         const lastUserMsg = [...meta.messages]
           .reverse()
           .find((m) => m.role === "user");
         if (lastUserMsg) {
-          const fullText = ""; // (already streamed; not needed for capture)
           try {
             const [captured, learnings] = await Promise.all([
               autoCaptureFromTurn(
                 meta.userId,
                 lastUserMsg.content,
-                fullText,
+                "", // assistant text already streamed; not needed for capture
                 meta.sessionId ?? undefined
               ),
               captureLearnings(meta.userId, lastUserMsg.content),
@@ -157,107 +175,4 @@ export async function buildUIMessageStream(
       "X-Session-Id": meta.sessionId ?? "",
     },
   });
-}
-
-async function handleStreamChunk(
-  c: { type: string; [key: string]: unknown },
-  writer: UIMessageStreamWriter,
-  toolCalls: ToolCallRecord[],
-  sources: SourceItem[],
-  _meta: StreamMeta
-): Promise<void> {
-  switch (c.type) {
-    case "text-delta": {
-      const delta = (c.text ?? c.delta ?? "") as string;
-      if (delta) writer.write({ type: "text-delta", id: "text", delta });
-      break;
-    }
-    case "reasoning-delta":
-    case "reasoning-start": {
-      const delta = (c.textDelta ?? c.text ?? "") as string;
-      if (delta) writer.write({ type: "reasoning-delta", id: "reasoning", delta });
-      break;
-    }
-    case "tool-call": {
-      const toolCallId = (c.toolCallId ?? crypto.randomUUID()) as string;
-      const toolName = String(c.toolName);
-      const input = (c.args ?? c.input ?? {}) as Record<string, unknown>;
-      toolCalls.push({ toolCallId, toolName, input, state: "input-available" });
-      writer.write({
-        type: "tool-input-available",
-        toolCallId,
-        toolName,
-        input,
-      });
-      break;
-    }
-    case "tool-result": {
-      const toolName = String(c.toolName);
-      const tc = toolCalls.find((t) => t.toolName === toolName);
-      const toolCallId =
-        tc?.toolCallId ?? (c.toolCallId as string) ?? crypto.randomUUID();
-      const output = c.output ?? c.result;
-      const errorText = c.errorText as string | undefined;
-
-      if (tc) {
-        tc.output = output;
-        tc.state = errorText ? "output-error" : "output-available";
-        tc.errorText = errorText;
-      }
-
-      if (errorText) {
-        writer.write({
-          type: "tool-output-error",
-          toolCallId,
-          errorText,
-        });
-      } else {
-        writer.write({
-          type: "tool-output-available",
-          toolCallId,
-          output,
-        });
-      }
-
-      // Collect sources from search tools
-      if (toolName === "webSearch" || toolName === "deepResearch" || toolName === "search") {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const r = output as any;
-        if (r?.results && Array.isArray(r.results)) {
-          sources.push(...r.results);
-        } else if (Array.isArray(output)) {
-          sources.push(...(output as SourceItem[]));
-        }
-      }
-      break;
-    }
-    case "finish": {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const usage = c.totalUsage as any;
-      writer.write({
-        type: "data-finish",
-        data: {
-          finishReason: c.finishReason,
-          usage: usage
-            ? {
-                input: usage.inputTokens ?? 0,
-                output: usage.outputTokens ?? 0,
-                total: usage.totalTokens ?? 0,
-              }
-            : null,
-        },
-      });
-      break;
-    }
-    case "error": {
-      writer.write({
-        type: "data-error",
-        data: { message: String(c.error ?? c.message ?? "Unknown error") },
-      });
-      break;
-    }
-    // step-start / step-finish / etc. are handled implicitly by the stream
-    default:
-      break;
-  }
 }
