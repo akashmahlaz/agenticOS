@@ -14,8 +14,6 @@
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
-  toUIMessageStream,
-  type UIMessageStreamWriter,
 } from "ai";
 import {
   onSubAgentProgress,
@@ -55,6 +53,37 @@ export interface SourceItem {
 }
 
 /**
+ * Async generator that yields chunks from `source` but drops any
+ * `reasoning-delta` / `text-delta` / `tool-input-delta` whose `delta`
+ * field is empty/missing.
+ *
+ * The AI SDK's `toUIMessageStream` faithfully forwards empty delta
+ * events that some providers (e.g. MiniMax over Anthropic) emit with
+ * no text content. The client-side `useChat` hook does strict Zod
+ * validation and throws on these ("expected string, received
+ * undefined"). We filter them out before merging.
+ */
+async function* dropEmptyDeltas(
+  source: AsyncIterable<unknown>
+): AsyncGenerator<unknown, void, undefined> {
+  for await (const chunk of source) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const c = chunk as any;
+    const t = c?.type;
+    if (
+      (t === "reasoning-delta" ||
+        t === "text-delta" ||
+        t === "tool-input-delta") &&
+      (c.delta === undefined || c.delta === null || c.delta === "")
+    ) {
+      // Drop empty delta — would fail Zod validation on the client.
+      continue;
+    }
+    yield chunk;
+  }
+}
+
+/**
  * Build a UIMessageStream response from a streamText result.
  *
  * The AI SDK's `toUIMessageStream({ sendReasoning: true })` is the
@@ -65,6 +94,11 @@ export interface SourceItem {
  * manual re-implementation (e.g. parsing `result.fullStream`) is fragile
  * and easily produces `Received reasoning-delta for missing reasoning part`
  * errors.
+ *
+ * One gotcha: the SDK forwards empty delta chunks (e.g. when a provider
+ * emits a "begin reasoning" event with no text). The client rejects these
+ * with "expected string, received undefined". We pipe the stream through
+ * `dropEmptyDeltas` to strip them before merging.
  *
  * We then layer our custom data-* events on top: sub-agent progress,
  * inline questions, sources, session, finish, error, memory and learning.
@@ -100,23 +134,35 @@ export function buildUIMessageStream(
       });
 
       try {
-        // 4. Merge the LLM stream. This is the ONLY correct way to forward
-        //    a streamText result to the UI message stream — it handles
-        //    start/delta/end for both text and reasoning.
-        writer.merge(
-          toUIMessageStream({
-            stream: result.toUIMessageStream({
-              sendReasoning: true,
-              sendSources: false, // we collect sources ourselves below
-              sendFinish: true,
-              sendStart: true,
-            }),
-            onError: (error) => {
-              console.error("[chat] stream error:", error);
-              return error instanceof Error ? error.message : String(error);
-            },
-          })
-        );
+        // 4. Iterate the LLM stream, dropping empty delta chunks, and
+        //    write each one to the writer. This is what `writer.merge`
+        //    does internally for a ReadableStream<UIMessageChunk>.
+        //
+        //    toUIMessageStream({ sendReasoning: true }) emits the
+        //    start/delta/end lifecycle for both text and reasoning parts
+        //    (the official AI SDK 7.x pattern — see
+        //    https://ai-sdk.dev/docs/ai-sdk-ui/streaming-data and
+        //    https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol).
+        //
+        //    One gotcha: the SDK faithfully forwards empty
+        //    reasoning-delta / text-delta / tool-input-delta events
+        //    that some providers (MiniMax over Anthropic) emit with no
+        //    text. The client-side useChat does strict Zod validation
+        //    and throws on these ("expected string, received
+        //    undefined"), so we drop them here.
+        const source = result.toUIMessageStream({
+          sendReasoning: true,
+          sendSources: false, // we collect sources ourselves below
+          sendFinish: true,
+          sendStart: true,
+        });
+
+        for await (const chunk of dropEmptyDeltas(source)) {
+          writer.write(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            chunk as any
+          );
+        }
       } catch (streamErr) {
         console.error("[chat] build stream error:", streamErr);
         writer.write({
