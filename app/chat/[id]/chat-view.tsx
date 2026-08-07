@@ -1,39 +1,34 @@
+// ChatView — client wrapper for /chat/[id]
+// Receives pre-loaded initialMessages from server component.
+// Renders sidebar + chat-container with URL-based navigation.
+
 "use client";
 
-// AppPage — fallback for the root URL (new chat, no sessionId in URL).
-// URL-routed chats live in /chat/[id]/page.tsx.
-// This page is still used for:
-//   - New chat (no id yet)
-//   - Temp chat (no id, not persisted)
-
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Sidebar from "@/components/chat/sidebar/index";
+import type { UIMessage } from "ai";
+import { useAuth } from "@/components/auth-wrapper";
+import Sidebar from "@/components/chat/sidebar";
 import ChatContainer from "@/components/chat/chat-container";
 import AuthGate from "@/components/auth-gate";
 
-const LS_TEMP_MODE = "agenticos-temp-mode";
+export interface ChatViewProps {
+  sessionId: string;
+  initialMessages: UIMessage[];
+  sessionTitle?: string;
+  isShared?: boolean;
+}
 
-export default function AppPage() {
+export default function ChatView({
+  sessionId,
+  initialMessages,
+}: ChatViewProps) {
   const router = useRouter();
-  const [isTempMode, setIsTempMode] = useState(false);
-  const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
+  const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-
-  // Hydrate temp mode from localStorage on mount
-  useEffect(() => {
-    try {
-      const temp = localStorage.getItem(LS_TEMP_MODE);
-      if (temp === "true") setIsTempMode(true);
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_TEMP_MODE, String(isTempMode));
-    } catch {}
-  }, [isTempMode]);
+  // Bump to force sidebar refresh after new chat created
+  const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
 
   // Detect mobile
   useEffect(() => {
@@ -43,6 +38,7 @@ export default function AppPage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  // Lock body scroll when drawer is open on mobile
   useEffect(() => {
     if (drawerOpen && isMobile) {
       document.body.style.overflow = "hidden";
@@ -54,45 +50,66 @@ export default function AppPage() {
     };
   }, [drawerOpen, isMobile]);
 
+  // Listen for sidebar refresh events
   useEffect(() => {
     const handler = () => setSidebarRefreshKey((k) => k + 1);
     window.addEventListener("agenticos-refresh-sessions", handler);
     return () => window.removeEventListener("agenticos-refresh-sessions", handler);
   }, []);
 
+  // Persist active session in localStorage as a backup (helps on refresh)
+  useEffect(() => {
+    try {
+      localStorage.setItem("agenticos-active-session", sessionId);
+    } catch {}
+  }, [sessionId]);
+
   // Handlers — all navigate via router
   const handleNewChat = useCallback(() => {
-    setIsTempMode(false);
-    setDrawerOpen(false);
-    // Stay on / for new chat (no sessionId yet)
-  }, []);
+    try {
+      localStorage.removeItem("agenticos-active-session");
+    } catch {}
+    router.push("/");
+  }, [router]);
 
   const handleSelectSession = useCallback(
     (id: string) => {
-      setIsTempMode(false);
-      setDrawerOpen(false);
+      if (id === sessionId) return; // already on this chat
+      try {
+        localStorage.setItem("agenticos-active-session", id);
+      } catch {}
       router.push(`/chat/${id}`);
     },
-    [router]
-  );
-
-  const handleSessionCreated = useCallback(
-    (id: string) => {
-      // Server created a new session — navigate to its URL
-      router.replace(`/chat/${id}`);
-    },
-    [router]
+    [router, sessionId]
   );
 
   const handleStartTemp = useCallback(() => {
-    setIsTempMode(true);
+    // For now, temp chats are not URL-routed. Just clear active session
+    // and let ChatContainer render empty state
+    try {
+      localStorage.setItem("agenticos-temp-mode", "true");
+    } catch {}
     setDrawerOpen(false);
   }, []);
 
   const handleExitTemp = useCallback(() => {
-    setIsTempMode(false);
-    setDrawerOpen(false);
-  }, []);
+    try {
+      localStorage.removeItem("agenticos-temp-mode");
+    } catch {}
+    router.push("/");
+  }, [router]);
+
+  // After a new chat is created server-side, navigate to its URL
+  const handleSessionCreated = useCallback(
+    (id: string) => {
+      if (id === sessionId) return;
+      try {
+        localStorage.setItem("agenticos-active-session", id);
+      } catch {}
+      router.replace(`/chat/${id}`);
+    },
+    [router, sessionId]
+  );
 
   return (
     <AuthGate>
@@ -100,11 +117,11 @@ export default function AppPage() {
         {/* Desktop sidebar */}
         <div className="hidden md:flex flex-shrink-0">
           <Sidebar
-            activeSessionId={null}
+            activeSessionId={sessionId}
             onSelectSession={handleSelectSession}
             onNewChat={handleNewChat}
             onStartTemp={handleStartTemp}
-            isTempMode={isTempMode}
+            isTempMode={false}
             refreshKey={sidebarRefreshKey}
           />
         </div>
@@ -124,7 +141,7 @@ export default function AppPage() {
           }`}
         >
           <Sidebar
-            activeSessionId={null}
+            activeSessionId={sessionId}
             onSelectSession={(id) => {
               handleSelectSession(id);
               setDrawerOpen(false);
@@ -138,7 +155,7 @@ export default function AppPage() {
               setDrawerOpen(false);
             }}
             onClose={() => setDrawerOpen(false)}
-            isTempMode={isTempMode}
+            isTempMode={false}
             refreshKey={sidebarRefreshKey}
           />
         </div>
@@ -146,10 +163,12 @@ export default function AppPage() {
         {/* Main content */}
         <div className="flex-1 flex flex-col min-w-0">
           <ChatContainer
-            initialSessionId={null}
+            key={sessionId}
+            initialSessionId={sessionId}
+            initialMessages={initialMessages}
             onSessionCreated={handleSessionCreated}
             onMenuClick={() => setDrawerOpen(true)}
-            isTempMode={isTempMode}
+            isTempMode={false}
             onExitTemp={handleExitTemp}
             onStartTemp={handleStartTemp}
           />

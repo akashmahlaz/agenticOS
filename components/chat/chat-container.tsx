@@ -31,6 +31,8 @@ import { loadSessionMessages } from "@/lib/load-messages";
 
 export interface ChatContainerProps {
   initialSessionId: string | null;
+  /** Pre-loaded messages (from /chat/[id] server component) */
+  initialMessages?: UIMessage[];
   onSessionCreated?: (id: string) => void;
   onMenuClick?: () => void;
   isTempMode: boolean;
@@ -65,6 +67,16 @@ export default function ChatContainer(props: ChatContainerProps) {
       };
     }
 
+    // If parent already provided messages (e.g. from /chat/[id] server
+    // component), use them directly — no need to fetch again
+    if (props.initialMessages) {
+      setLoadedMessages(props.initialMessages);
+      setIsLoadingMessages(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     setIsLoadingMessages(true);
     loadSessionMessages(props.initialSessionId, token)
       .then((msgs) => {
@@ -82,7 +94,7 @@ export default function ChatContainer(props: ChatContainerProps) {
     return () => {
       cancelled = true;
     };
-  }, [props.initialSessionId, token]);
+  }, [props.initialSessionId, token, props.initialMessages]);
 
   const { messages, sendMessage, status, stop, error, regenerate } = useChatStream({
     initialSessionId: props.initialSessionId,
