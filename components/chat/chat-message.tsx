@@ -178,6 +178,11 @@ export default function ChatMessage({
       const isLastStep = idx === parts.length - 1;
       const isActive = isLastStep && isStreaming && isLast;
 
+      // Stream step-start marker (ReAct step boundary — no UI for it)
+      if (p.type === "step-start") {
+        return;
+      }
+
       // Tool part
       if (
         (typeof p.type === "string" && p.type.startsWith("tool-")) ||
@@ -296,6 +301,41 @@ export default function ChatMessage({
         });
         return;
       }
+
+      // Text "thinking aloud" part — show as a step ONLY when followed by
+      // a tool/sub-agent (the model says "Let me try X" then calls X).
+      // Skip the final response text since it goes in MessageResponse below.
+      if (p.type === "text" && typeof p.text === "string" && p.text) {
+        let nextIdx = idx + 1;
+        while (nextIdx < parts.length) {
+          const np = parts[nextIdx];
+          if (np.type === "step-start" || np.type === "reasoning") {
+            nextIdx++;
+            continue;
+          }
+          break;
+        }
+        const nextPart = parts[nextIdx];
+        if (
+          nextPart &&
+          ((typeof nextPart.type === "string" &&
+            (nextPart.type.startsWith("tool-") ||
+              nextPart.type === "dynamic-tool")) ||
+            nextPart.type === "data-subagent")
+        ) {
+          const snippet = p.text.length > 120 ? p.text.slice(0, 120) + "…" : p.text;
+          steps.push({
+            key: `think-${idx}`,
+            icon: BrainIcon,
+            label: "Thinking…",
+            description: snippet,
+            isLast: isLastStep,
+            isActive,
+          });
+        }
+        // Else: final answer — render as MessageResponse below
+        return;
+      }
     });
 
     return steps;
@@ -380,44 +420,76 @@ export default function ChatMessage({
             Per https://elements.ai-sdk.dev/examples/chatbot:
               "We switch on `message.parts` and render the respective
                part within Message, Reasoning, and Sources."
+            When CoT is active, the "thinking aloud" text parts (followed by
+            tools/sub-agents) are absorbed into the CoT steps above, so we
+            skip them here. Only the final response text is rendered.
         */}
-        {parts.map((part, i) => {
+        {(() => {
+          // For CoT messages, skip text parts that are followed by tools
+          // (those are already shown as "Thinking…" steps above).
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const p: any = part;
-          switch (p.type) {
-            case "text":
-              if (!p.text) return null;
-              return (
-                <MessageResponse key={`text-${message.id}-${i}`}>
-                  {p.text}
-                </MessageResponse>
-              );
-
-            case "reasoning":
-              // Handled by the <Reasoning> / <ChainOfThought> block above
-              return null;
-
-            case "source-url":
-              // Sources are grouped into the <ChainOfThought> block above
-              // (since our model emits discrete steps, not loose sources).
-              return null;
-
-            case "data-subagent":
-            case "data-question":
-              // Handled by SubAgentActivity / InlineQuestion above
-              return null;
-
-            default:
-              // Tool parts (tool-* and dynamic-tool)
-              if (
-                (typeof p.type === "string" && p.type.startsWith("tool-")) ||
-                p.type === "dynamic-tool"
-              ) {
-                return <ToolPart key={`tool-${message.id}-${i}`} part={p} />;
+          const isAbsorbedInCoT = (i: number, p: any): boolean => {
+            if (!useCoT || p.type !== "text") return false;
+            let nextIdx = i + 1;
+            while (nextIdx < parts.length) {
+              const np = parts[nextIdx];
+              if (np.type === "step-start" || np.type === "reasoning") {
+                nextIdx++;
+                continue;
               }
-              return null;
-          }
-        })}
+              break;
+            }
+            const next = parts[nextIdx];
+            return (
+              next &&
+              ((typeof next.type === "string" &&
+                (next.type.startsWith("tool-") || next.type === "dynamic-tool")) ||
+                next.type === "data-subagent")
+            );
+          };
+          return parts.map((part, i) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const p: any = part;
+            if (isAbsorbedInCoT(i, p)) return null;
+            switch (p.type) {
+              case "text":
+                if (!p.text) return null;
+                return (
+                  <MessageResponse key={`text-${message.id}-${i}`}>
+                    {p.text}
+                  </MessageResponse>
+                );
+
+              case "reasoning":
+                // Handled by the <Reasoning> / <ChainOfThought> block above
+                return null;
+
+              case "source-url":
+                // Sources are grouped into the <ChainOfThought> block above
+                // (since our model emits discrete steps, not loose sources).
+                return null;
+
+              case "data-subagent":
+              case "data-question":
+                // Handled by SubAgentActivity / InlineQuestion above
+                return null;
+
+              case "step-start":
+                // Stream step boundary marker — no UI
+                return null;
+
+              default:
+                // Tool parts (tool-* and dynamic-tool)
+                if (
+                  (typeof p.type === "string" && p.type.startsWith("tool-")) ||
+                  p.type === "dynamic-tool"
+                ) {
+                  return <ToolPart key={`tool-${message.id}-${i}`} part={p} />;
+                }
+                return null;
+            }
+          });
+        })()}
 
         {/* Action bar (regenerate, copy, etc.) */}
         {!isUser && !isStreaming && fullText && onRegenerate && (
