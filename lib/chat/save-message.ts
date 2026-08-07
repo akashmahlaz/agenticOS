@@ -1,15 +1,21 @@
-// save-message — extract structured data from a UIMessage and save to DB
-// Called by the onFinish callback in toUIMessageStream() to persist both
-// the user message and the AI response.
+// save-message — persist a UIMessage to the database.
 //
-// Per the AI SDK 7.x official docs:
+// Per the official AI SDK 7.x docs:
 //   https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-message-persistence
-// The onFinish callback receives the full messages array (including the
-// new AI response). We save the last 2 messages (user + assistant).
+//   https://ai-sdk.dev/docs/ai-sdk-ui/chatbot
 //
-// IMPORTANT: We also save the original part order in `reasoningSteps[0]._order`
-// (using a metadata field) so that on load we can restore the interleaved
-// order (Thought → Action → Observation → Thought, not grouped by type).
+// The onFinish callback receives the full messages array. We persist the
+// last 2 messages (user + assistant) preserving the EXACT part order so
+// that on reload the UI can render with the official `switch (part.type)`
+// pattern (Thought → Action → Observation, ReAct style).
+//
+// Storage strategy:
+//   - content         ← joined text from all text parts (for quick listing)
+//   - reasoningSteps  ← reasoning parts as { text } (for analytics)
+//   - toolCalls       ← tool parts as { name, input, output } (for analytics)
+//   - citations       ← source-url parts as { url, title } (for analytics)
+//   - parts           ← FULL ordered UIMessage["parts"] (preserves stream order
+//                       and all part types; this is the source of truth on load)
 
 import type { UIMessage } from "ai";
 import { db } from "@/lib/db";
@@ -27,37 +33,30 @@ function safeArray(v: unknown): any[] {
   return Array.isArray(v) ? v : [];
 }
 
-/**
- * Extract structured data from a UIMessage and persist it to the database.
- *
- * - text content   → `content` field (joined from all text parts)
- * - reasoning      → `reasoningSteps` JSON array (with `_order` preserved)
- * - tool calls     → `toolCalls` JSON array (with `_order` preserved)
- * - source URLs    → `citations` JSON array
- * - model + agent  → stored as separate columns
- *
- * Safe to call multiple times for the same message — uses try/catch to
- * never break the stream on DB errors.
- */
 export async function saveChatMessage(args: SaveChatMessageArgs): Promise<void> {
   const { sessionId, message, model, agent } = args;
-  const parts = safeArray(message.parts);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parts = safeArray(message.parts as any) as any[];
 
-  // Capture original part order via `_order` field on each item
-  // so we can restore the interleaved order (ReAct style) on load
+  // Extract text from all text parts (joined for quick listing)
+  const text = parts
+    .filter((p) => p?.type === "text" && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("\n");
+
+  // Reasoning parts (for analytics)
   const reasoningSteps = parts
     .filter((p) => p?.type === "reasoning" && typeof p.text === "string")
-    .map((p, i) => ({ _order: i, text: p.text }));
+    .map((p) => ({ text: p.text }));
 
-  // Extract tool calls (tool-* parts and dynamic-tool) — preserve order
+  // Tool parts (for analytics)
   const toolCalls = parts
     .filter(
       (p) =>
         (typeof p?.type === "string" && p.type.startsWith("tool-")) ||
         p?.type === "dynamic-tool"
     )
-    .map((p, i) => ({
-      _order: i,
+    .map((p) => ({
       name: p.toolName ?? p.type.replace(/^tool-/, ""),
       toolCallId: p.toolCallId,
       state: p.state,
@@ -67,21 +66,14 @@ export async function saveChatMessage(args: SaveChatMessageArgs): Promise<void> 
       output: p.output ?? null,
     }));
 
-  // Extract source URLs (preserve order too)
+  // Source URLs (for analytics)
   const citations = parts
     .filter((p) => p?.type === "source-url" && typeof p.url === "string")
-    .map((p, i) => ({
-      _order: i,
+    .map((p) => ({
       url: p.url,
       title: p.title,
       sourceId: p.sourceId,
     }));
-
-  // Extract text — keep in order
-  const textParts = parts.filter(
-    (p) => p?.type === "text" && typeof p.text === "string"
-  );
-  const text = textParts.map((p) => p.text).join("\n");
 
   try {
     await db.message.create({
@@ -92,6 +84,9 @@ export async function saveChatMessage(args: SaveChatMessageArgs): Promise<void> 
         reasoningSteps,
         toolCalls,
         citations,
+        // Full ordered parts — source of truth for client rendering.
+        // Per AI SDK docs, parts must be persisted in their original order.
+        parts,
         model: model ?? null,
         agent: agent ?? null,
       },
@@ -102,10 +97,6 @@ export async function saveChatMessage(args: SaveChatMessageArgs): Promise<void> 
   }
 }
 
-/**
- * Save the last N messages from a messages array. Used by onFinish
- * callback which receives the full UIMessage[] array.
- */
 export async function saveLastNMessages(args: {
   sessionId: string;
   userId: string;

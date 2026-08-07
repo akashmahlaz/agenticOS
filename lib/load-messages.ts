@@ -1,7 +1,15 @@
 // load-messages — convert DB messages to UIMessage[] for useChat
-// Fetches messages for a given session from /api/messages
-// and converts the DB shape (single content string + JSON fields)
-// into the UIMessage shape (parts array).
+//
+// Per the official AI SDK 7.x docs:
+//   https://ai-sdk.dev/docs/ai-sdk-ui/chatbot
+//   https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-message-persistence
+//
+// The DB stores the FULL ordered UIMessage["parts"] array (preserves
+// stream order — Thought → Action → Observation, ReAct style).
+// This is the source of truth on load.
+//
+// We render with the official `message.parts.map` + `switch (part.type)`
+// pattern in `components/chat/chat-message.tsx`.
 
 import type { UIMessage } from "ai";
 
@@ -9,106 +17,79 @@ export interface DbMessage {
   id: string;
   role: string;
   content: string;
-  reasoningSteps?: unknown;
-  toolCalls?: unknown;
-  citations?: unknown;
+  reasoningSteps: unknown;
+  toolCalls: unknown;
+  citations: unknown;
+  parts: unknown;
   model?: string | null;
   agent?: string | null;
-  createdAt: string;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function safeArray(v: unknown): any[] {
-  return Array.isArray(v) ? (v as any[]) : [];
+  createdAt: string | Date;
 }
 
 /**
  * Convert a single DB message to a UIMessage.
- * Strategy: interleave parts in their ORIGINAL order (not grouped by type).
  *
- * Per the AI SDK 7.x docs and ReAct pattern, a typical assistant turn
- * contains text fragments, tool-call requests, tool-call results, and
- * reasoning traces, INTERLEAVED in the order the model emitted them.
- *
- * We use the `_order` field saved on each item (added by saveChatMessage)
- * to reconstruct this order. If `_order` is missing (legacy messages),
- * we fall back to the old grouped order.
+ * Priority:
+ *   1. `parts` column (full ordered parts) — used if present
+ *   2. Fallback: build parts from `content` + `reasoningSteps` + `toolCalls`
+ *      + `citations` (for legacy messages saved before `parts` was added)
  */
 export function dbMessageToUi(m: DbMessage): UIMessage {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const reasoningRaw = safeArray(m.reasoningSteps) as any[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toolsRaw = safeArray(m.toolCalls) as any[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const citationsRaw = safeArray(m.citations) as any[];
+  const storedParts = Array.isArray(m.parts) ? (m.parts as any[]) : null;
 
-  // Build a unified "timeline" of all parts with their type + payload + order
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const timeline: Array<{ order: number; build: () => UIMessage["parts"][number] }> = [];
-
-  // Reasoning
-  for (const r of reasoningRaw) {
-    if (r && typeof r === "object" && typeof r.text === "string" && r.text) {
-      timeline.push({
-        order: typeof r._order === "number" ? r._order : 0,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        build: () => ({ type: "reasoning", text: r.text }) as any,
-      });
-    }
+  if (storedParts && storedParts.length > 0) {
+    // New format: use the full ordered parts array as-is
+    return {
+      id: m.id,
+      role: m.role as UIMessage["role"],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      parts: storedParts as any,
+    };
   }
 
-  // Tools
-  for (const t of toolsRaw) {
+  // Legacy fallback: rebuild parts from separate fields
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parts: UIMessage["parts"] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const reasoning = (Array.isArray(m.reasoningSteps) ? m.reasoningSteps : []) as any[];
+  for (const r of reasoning) {
+    if (r && typeof r === "object" && typeof r.text === "string" && r.text) {
+      parts.push({ type: "reasoning", text: r.text });
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tools = (Array.isArray(m.toolCalls) ? m.toolCalls : []) as any[];
+  for (const t of tools) {
     if (t && typeof t === "object") {
       const name = typeof t.name === "string" ? t.name : "tool";
-      timeline.push({
-        order: typeof t._order === "number" ? t._order : 0,
+      parts.push({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        build: () =>
-          ({
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            type: `tool-${name}` as any,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            toolCallId: (t.id as string) || `${m.id}-${name}`,
-            state: "output-available" as const,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            input: (t.input as any) ?? {},
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            output: (t.output as any) ?? null,
-          }) as any,
+        type: `tool-${name}` as any,
+        toolCallId: t.toolCallId || `${m.id}-${name}`,
+        state: "output-available" as const,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        input: (t.input as any) ?? {},
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        output: (t.output as any) ?? null,
       });
     }
   }
-
-  // Sources
-  for (const c of citationsRaw) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const citations = (Array.isArray(m.citations) ? m.citations : []) as any[];
+  for (const c of citations) {
     if (c && typeof c === "object" && typeof c.url === "string") {
-      timeline.push({
-        order: typeof c._order === "number" ? c._order : 0,
+      parts.push({
+        type: "source-url",
+        url: c.url,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        build: () =>
-          ({
-            type: "source-url",
-            url: c.url,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            title: (c.title as string) ?? c.url,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            sourceId: (c.id as string) ?? c.url,
-          }) as any,
-      });
+        title: (c.title as string) ?? c.url,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        sourceId: (c.id as string) ?? c.url,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
     }
   }
-
-  // If no _order was saved anywhere, fall back to old grouped order
-  const hasOrder = timeline.some((t) => t.order !== 0) || timeline.length <= 1;
-  if (hasOrder) {
-    timeline.sort((a, b) => a.order - b.order);
-  }
-
-  const parts: UIMessage["parts"] = timeline.map((t) => t.build());
-
-  // Text part last (the actual message content) — text isn't tracked with _order
-  // because the AI SDK joins all text parts into a single "text" part on save
   if (m.content) {
     parts.push({ type: "text", text: m.content });
   }
@@ -125,17 +106,21 @@ export function dbMessageToUi(m: DbMessage): UIMessage {
  * Returns [] if no session, no auth, or on error.
  */
 export async function loadSessionMessages(
-  sessionId: string,
-  token?: string | null
+  sessionId: string | null,
+  token: string | null
 ): Promise<UIMessage[]> {
   if (!sessionId) return [];
   try {
-    const res = await fetch(`/api/messages?sessionId=${encodeURIComponent(sessionId)}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      credentials: "include",
-    });
+    const res = await fetch(
+      `/api/messages?sessionId=${encodeURIComponent(sessionId)}`,
+      {
+        cache: "no-store",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }
+    );
     if (!res.ok) return [];
-    const data: DbMessage[] = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = (await res.json()) as any[];
     if (!Array.isArray(data)) return [];
     return data.map(dbMessageToUi);
   } catch (err) {

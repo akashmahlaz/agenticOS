@@ -21,7 +21,8 @@ export async function GET(req: Request, { params }: RouteParams) {
       include: {
         messages: { orderBy: { createdAt: "asc" }, select: {
           id: true, role: true, content: true, reasoningSteps: true,
-          toolCalls: true, citations: true, model: true, agent: true, createdAt: true,
+          toolCalls: true, citations: true, parts: true,
+          model: true, agent: true, createdAt: true,
         }},
       },
     });

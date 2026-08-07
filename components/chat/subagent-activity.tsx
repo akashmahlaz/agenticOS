@@ -20,7 +20,7 @@ import {
   KeyIcon,
 } from "lucide-react";
 
-interface SubAgentEvent {
+export interface SubAgentEvent {
   agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst" | "browser" | "knowledge" | "operator";
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";

@@ -260,6 +260,10 @@ model Message {
   reasoningSteps  Json     @default("[]")
   toolCalls       Json     @default("[]")
   citations       Json     @default("[]")
+  // Full ordered UI message parts (preserves stream order for AI SDK UIMessage).
+  // Per https://ai-sdk.dev/docs/ai-sdk-ui/chatbot — parts should be persisted
+  // in their original chronological order (Thought → Action → Observation, ReAct).
+  parts           Json     @default("[]")
   usage           Json?
 
   model String?
