@@ -1,17 +1,11 @@
 // ChatMessage — renders a single message using AI Elements
-// Follows the official AI Elements "switch (part.type)" pattern from
-// https://elements.ai-sdk.dev/docs/usage
-// and the chatbot example at
-// https://elements.ai-sdk.dev/examples/chatbot
+// Follows the official AI SDK "switch (part.type)" pattern from
+// https://ai-sdk.dev/docs/ai-sdk-ui/chatbot
+// and https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-message-persistence
 //
-// Renders, in order, for assistant messages:
-//   1. SubAgentPanel (data-subagent events)
-//   2. ChainOfThought (reasoning parts)
-//   3. Sources (source-url parts) — sibling of Message per docs
-//   4. Tool (tool-* parts) — official Tool component
-//   5. InlineQuestion (data-question events)
-//   6. Text (text parts) — MessageResponse
-//   7. Action bar (after streaming finishes)
+// KEY: Parts are rendered in their ORIGINAL chronological order
+// (Thought → Action → Observation → Thought, etc.) — NOT grouped by type.
+// This is the ReAct pattern that shows the agent's actual workflow.
 
 "use client";
 
@@ -38,6 +32,8 @@ import {
   ChainOfThoughtHeader,
   ChainOfThoughtContent,
   ChainOfThoughtStep,
+  ChainOfThoughtSearchResults,
+  ChainOfThoughtSearchResult,
 } from "@/components/ai-elements/chain-of-thought";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { BrainIcon, SearchIcon, FileTextIcon } from "lucide-react";
@@ -54,9 +50,6 @@ export interface ChatMessageProps {
   onSubmitQuestion?: (answer: Record<string, string | string[]>) => void;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyPart = any;
-
 export default function ChatMessage({
   message,
   isLast,
@@ -69,7 +62,7 @@ export default function ChatMessage({
   // Collect sub-agent events from data-subagent parts
   const subAgentEvents = useMemo<SubAgentEvent[]>(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (message.parts as AnyPart[])
+    return (message.parts as any[])
       .filter((p) => p.type === "data-subagent")
       .map((p, i) => ({
         agent: p.data?.agent ?? "unknown",
@@ -86,55 +79,93 @@ export default function ChatMessage({
   // Collect inline questions from data-question parts
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const inlineQuestions = useMemo<any[]>(() => {
-    return (message.parts as AnyPart[])
+    return (message.parts as any[])
       .filter((p) => p.type === "data-question")
       .map((p) => p.data);
   }, [message.parts]);
 
-  // Consolidate reasoning parts
-  const reasoningText = useMemo(() => {
-    return (message.parts as AnyPart[])
-      .filter((p) => p.type === "reasoning")
-      .map((p) => p.text)
-      .filter(Boolean)
-      .join("\n\n");
-  }, [message.parts]);
+  // Group reasoning parts (consecutive ones form one "block")
+  // and tools, sources, and text for the OFFICIAL switch (part.type) pattern
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const textParts = (message.parts as any[]).filter(
+    (p) => p.type === "text" && typeof p.text === "string"
+  );
+  const fullText = textParts.map((p) => p.text).join("");
+  const sourceParts = (message.parts as any[]).filter(
+    (p) => p.type === "source-url"
+  );
 
-  // Count source-url parts
-  const sourceCount = useMemo(() => {
-    return (message.parts as AnyPart[]).filter(
-      (p) => p.type === "source-url" || p.type === "source-document"
-    ).length;
-  }, [message.parts]);
+  // Build interleaved steps for ChainOfThought: each part in its
+  // chronological order, with reasoning showing its text, tool parts
+  // showing tool name, and source parts showing source URLs.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const interleavedSteps = (message.parts as any[])
+    .map((p, idx) => ({ p, idx }))
+    .filter(({ p }) => p.type !== "text" && p.type !== "data-subagent" && p.type !== "data-question")
+    .map(({ p, idx }, stepIdx) => {
+      const isLast = stepIdx === message.parts.length - 1;
+      // Reasoning part
+      if (p.type === "reasoning") {
+        return {
+          key: `r-${idx}`,
+          kind: "reasoning" as const,
+          label: typeof p.text === "string" ? p.text : "Reasoning…",
+          type: detectStepType(p.text || ""),
+          isActive: isLast && isStreaming,
+        };
+      }
+      // Tool part
+      if (typeof p.type === "string" && p.type.startsWith("tool-")) {
+        const toolName = p.type.replace(/^tool-/, "");
+        return {
+          key: `t-${idx}`,
+          kind: "tool" as const,
+          label: `Used ${toolName}`,
+          type: "tool",
+          isActive: false,
+        };
+      }
+      // Source part
+      if (p.type === "source-url") {
+        return {
+          key: `s-${idx}`,
+          kind: "source" as const,
+          label: p.title || p.url,
+          url: p.url,
+          type: "search",
+          isActive: false,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean) as Array<{
+      key: string;
+      kind: "reasoning" | "tool" | "source";
+      label: string;
+      type: string;
+      url?: string;
+      isActive: boolean;
+    }>;
 
-  // Check if reasoning is currently streaming
-  const lastPart = (message.parts as AnyPart[])[
-    (message.parts as AnyPart[]).length - 1
+  // Last part check for streaming
+  const lastPart = (message.parts as any[])[
+    (message.parts as any[]).length - 1
   ];
   const isReasoningStreaming =
     isLast && isStreaming && lastPart?.type === "reasoning";
 
-  // Text content for action bar
-  const fullText = useMemo(() => {
-    return (message.parts as AnyPart[])
-      .filter((p) => p.type === "text")
-      .map((p) => p.text || "")
-      .join("");
-  }, [message.parts]);
-
-  const reasoningSteps = parseReasoningSteps(reasoningText);
-
   return (
     <Message from={message.role}>
       <MessageContent>
-        {/* Sub-agent activity panel */}
+        {/* Sub-agent activity panel — always at top */}
         {!isUser && subAgentEvents.length > 0 && (
           <SubAgentPanel events={subAgentEvents} isStreaming={isStreaming} />
         )}
 
-        {/* Chain of Thought */}
-        {!isUser && reasoningText && reasoningSteps.length > 0 && (
-          <ChainOfThought defaultOpen className="mb-3">
+        {/* Interleaved Chain of Thought — ReAct style:
+            reasoning → tool → reasoning → tool → source, etc. */}
+        {!isUser && interleavedSteps.length > 0 && (
+          <ChainOfThought defaultOpen className="mb-3 not-prose">
             <ChainOfThoughtHeader>
               <span className="flex items-center gap-1.5">
                 <BrainIcon className="size-3.5" />
@@ -142,54 +173,56 @@ export default function ChatMessage({
               </span>
             </ChainOfThoughtHeader>
             <ChainOfThoughtContent>
-              {reasoningSteps.map((step, idx) => (
+              {interleavedSteps.map((step, idx) => (
                 <ChainOfThoughtStep
-                  key={idx}
+                  key={step.key}
                   icon={getStepIcon(step.type)}
-                  label={step.text}
-                  status={
-                    idx === reasoningSteps.length - 1 && isReasoningStreaming
-                      ? "active"
-                      : "complete"
-                  }
-                />
+                  label={step.label}
+                  status={step.isActive ? "active" : "complete"}
+                >
+                  {/* If step is a source, render the search results inside */}
+                  {step.kind === "source" && step.url && (
+                    <ChainOfThoughtSearchResults className="mt-1">
+                      <ChainOfThoughtSearchResult>
+                        {step.label}
+                      </ChainOfThoughtSearchResult>
+                    </ChainOfThoughtSearchResults>
+                  )}
+                </ChainOfThoughtStep>
               ))}
             </ChainOfThoughtContent>
           </ChainOfThought>
         )}
 
-        {/* Fallback Reasoning display */}
-        {!isUser && reasoningText && reasoningSteps.length === 0 && (
+        {/* Fallback Reasoning display (legacy messages without interleaved steps) */}
+        {!isUser && interleavedSteps.length === 0 && hasLegacyReasoning(message) && (
           <Reasoning className="w-full" isStreaming={isReasoningStreaming}>
             <ReasoningTrigger />
-            <ReasoningContent>{reasoningText}</ReasoningContent>
+            <ReasoningContent>
+              {extractLegacyReasoningText(message)}
+            </ReasoningContent>
           </Reasoning>
         )}
 
-        {/* Sources — sibling block, placed before MessageResponse per official pattern */}
-        {!isUser && sourceCount > 0 && (
+        {/* Sources — grouped sibling block (per official pattern) */}
+        {!isUser && sourceParts.length > 0 && (
           <Sources>
-            <SourcesTrigger count={sourceCount} />
-            {(message.parts as AnyPart[]).map((part, i) => {
-              if (part.type === "source-url") {
-                return (
-                  <SourcesContent key={`src-${message.id}-${i}`}>
-                    <Source
-                      key={`s-${message.id}-${i}`}
-                      href={part.url}
-                      title={part.title ?? part.url}
-                    />
-                  </SourcesContent>
-                );
-              }
-              return null;
-            })}
+            <SourcesTrigger count={sourceParts.length} />
+            {sourceParts.map((part, i) => (
+              <SourcesContent key={`src-${message.id}-${i}`}>
+                <Source
+                  key={`s-${message.id}-${i}`}
+                  href={part.url}
+                  title={part.title ?? part.url}
+                />
+              </SourcesContent>
+            ))}
           </Sources>
         )}
 
         {/* Tool calls — official Tool component per docs */}
         {!isUser &&
-          (message.parts as AnyPart[]).map((part, i) => {
+          (message.parts as any[]).map((part, i) => {
             if (typeof part.type === "string" && part.type.startsWith("tool-")) {
               return (
                 <ToolPart
@@ -209,11 +242,11 @@ export default function ChatMessage({
               question={{
                 id: q.id,
                 prompt: q.prompt,
-                fields: (q.fields ?? []).map((f: AnyPart) => ({
+                fields: (q.fields ?? []).map((f: any) => ({
                   name: f.key,
                   label: f.label,
                   type: f.type,
-                  options: f.options?.map((o: AnyPart) =>
+                  options: f.options?.map((o: any) =>
                     typeof o === "string" ? o : o.label
                   ),
                   required: f.required,
@@ -224,18 +257,15 @@ export default function ChatMessage({
             />
           ))}
 
-        {/* Text content */}
-        {(message.parts as AnyPart[]).map((part, i) => {
-          if (part.type === "text") {
-            const text = part.text;
-            if (!text) return null;
-            return (
-              <MessageResponse key={`text-${message.id}-${i}`}>
-                {text}
-              </MessageResponse>
-            );
-          }
-          return null;
+        {/* Text content (rendered last, after all reasoning/tools/sources) */}
+        {textParts.map((part, i) => {
+          const text = part.text;
+          if (!text) return null;
+          return (
+            <MessageResponse key={`text-${message.id}-${i}`}>
+              {text}
+            </MessageResponse>
+          );
         })}
 
         {/* Action bar */}
@@ -258,46 +288,22 @@ export default function ChatMessage({
   );
 }
 
-// Parse reasoning text into structured steps for Chain of Thought
-function parseReasoningSteps(text: string): Array<{ type: string; text: string }> {
-  if (!text) return [];
+// Helpers
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hasLegacyReasoning(message: UIMessage): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (message.parts as any[]).some(
+    (p) => p.type === "reasoning" && typeof p.text === "string" && p.text.length > 0
+  );
+}
 
-  const steps: Array<{ type: string; text: string }> = [];
-  const lines = text.split("\n");
-  let currentStep = { type: "thinking", text: "" };
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    if (
-      trimmed.match(/^(Step \d+[:.]|Step \d+)/i) ||
-      trimmed.match(/^\d+[\.\)]\s/)
-    ) {
-      if (currentStep.text) steps.push(currentStep);
-      const type = detectStepType(trimmed);
-      currentStep = { type, text: trimmed };
-    } else if (trimmed.match(/search(ing|ed)?/i)) {
-      if (currentStep.text) steps.push(currentStep);
-      currentStep = { type: "search", text: trimmed };
-    } else if (trimmed.match(/analyz(e|ing)/i)) {
-      if (currentStep.text) steps.push(currentStep);
-      currentStep = { type: "analysis", text: trimmed };
-    } else if (trimmed.match(/execut(e|ing|ion)|tool call/i)) {
-      if (currentStep.text) steps.push(currentStep);
-      currentStep = { type: "tool", text: trimmed };
-    } else if (currentStep.text) {
-      currentStep.text += " " + trimmed;
-    } else {
-      currentStep.text = trimmed;
-    }
-  }
-
-  if (currentStep.text) steps.push(currentStep);
-  if (steps.length === 0 && text) {
-    steps.push({ type: "thinking", text: text.slice(0, 500) });
-  }
-  return steps;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractLegacyReasoningText(message: UIMessage): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (message.parts as any[])
+    .filter((p) => p.type === "reasoning" && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("\n\n");
 }
 
 function detectStepType(text: string): string {

@@ -4,11 +4,17 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getUserIdFromRequest } from "@/lib/auth";
 
-// GET /api/sessions — list all sessions for the user (excludes temporary + non-shared)
-export async function GET() {
+// GET /api/sessions — list sessions for the authenticated user
+export async function GET(req: Request) {
   try {
+    // SECURITY: must be authenticated and scoped to the current user
+    const userId = getUserIdFromRequest(req);
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const sessions = await db.session.findMany({
-      where: { isTemporary: false },
+      where: { userId, isTemporary: false },
       orderBy: { updatedAt: "desc" },
       take: 50,
       select: {
