@@ -100,7 +100,7 @@ export async function POST(req: Request): Promise<Response> {
   // `part.data` to be raw base64/URL, but convertToModelMessages
   // wraps data: URLs as `{type:'url', url:'data:...'}` which the
   // provider then tries to convertToBase64() and fails.
-  const selectedModel = model || "MiniMax-M2";
+  const selectedModel = model || "MiniMax-M3";
   const modelMessages = await convertUIMessagesToModel(messages);
 
   // Stash userId/sessionId on globalThis so sub-agents (memory-keeper,

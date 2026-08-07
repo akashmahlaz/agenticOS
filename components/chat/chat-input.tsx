@@ -21,7 +21,7 @@ import {
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
 import { Attachment, AttachmentPreview, AttachmentRemove, Attachments } from "@/components/ai-elements/attachments";
-import { MicIcon, PlusIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import type { ChatStatus } from "ai";
 
 // Attachments display — must be inside PromptInputHeader
@@ -60,8 +60,6 @@ export default function ChatInput({
     onSubmit({ text: message.text, files: message.files });
   };
 
-  const isStreaming = status === "streaming" || status === "submitted";
-
   return (
     <PromptInput
       onSubmit={handleSubmit}
@@ -95,17 +93,7 @@ export default function ChatInput({
           </PromptInputActionMenu>
         </PromptInputTools>
 
-        {/* Mic icon (decorative for now) — Gemini's voice mode */}
-        <button
-          type="button"
-          aria-label="Voice input"
-          className="!h-9 !w-9 !rounded-full !bg-transparent !shadow-none !text-muted-foreground hover:!text-foreground hover:!bg-muted/40"
-          onClick={() => {
-            // Hook into voice mode later
-          }}
-        >
-          <MicIcon size={18} strokeWidth={1.75} />
-        </button>
+        {/* (voice/mic icon removed per user request) */}
 
         {/* Submit — dark blue circle, white icon (Gemini's submit button) */}
         <PromptInputSubmit

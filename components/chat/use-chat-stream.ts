@@ -1,5 +1,5 @@
 // useChatStream — thin wrapper around useChat
-// All session/temp state is passed in via props
+// All session/temp/model state is passed in via props
 // Returns messages, sendMessage, status, stop, error, regenerate
 
 "use client";
@@ -8,13 +8,13 @@ import { useMemo, useRef, useEffect } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useAuth } from "@/components/auth-wrapper";
-
-const DEFAULT_MODEL = "MiniMax-M2";
+import { DEFAULT_MODEL_ID } from "@/lib/models";
 
 export interface UseChatStreamOptions {
   initialSessionId: string | null;
   initialMessages?: UIMessage[];
   isTemporary?: boolean;
+  model?: string;
 }
 
 export function useChatStream(opts: UseChatStreamOptions) {
@@ -23,11 +23,13 @@ export function useChatStream(opts: UseChatStreamOptions) {
   // Refs so the transport always reads the latest values
   const sessionIdRef = useRef<string | null>(opts.initialSessionId);
   const isTempRef = useRef<boolean>(!!opts.isTemporary);
+  const modelRef = useRef<string>(opts.model ?? DEFAULT_MODEL_ID);
 
   useEffect(() => {
     sessionIdRef.current = opts.initialSessionId;
     isTempRef.current = !!opts.isTemporary;
-  }, [opts.initialSessionId, opts.isTemporary]);
+    modelRef.current = opts.model ?? DEFAULT_MODEL_ID;
+  }, [opts.initialSessionId, opts.isTemporary, opts.model]);
 
   const transport = useMemo(
     () =>
@@ -36,7 +38,7 @@ export function useChatStream(opts: UseChatStreamOptions) {
         headers: () => ({ Authorization: `Bearer ${token ?? ""}` }),
         body: () => ({
           sessionId: sessionIdRef.current,
-          model: DEFAULT_MODEL,
+          model: modelRef.current,
           isTemporary: isTempRef.current,
         }),
       }),

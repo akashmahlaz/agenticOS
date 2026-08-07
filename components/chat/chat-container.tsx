@@ -4,7 +4,8 @@
 //
 // Queue is shown when there are pending user messages (sent while
 // another response is streaming). All AI Elements primitives are used
-// per official patterns.
+// per official patterns. Model selection is managed here and persisted
+// to localStorage.
 
 "use client";
 
@@ -24,6 +25,7 @@ import MessageQueue from "./queue";
 import { useChatStream } from "./use-chat-stream";
 import type { QueuedMessage } from "./queue";
 import type { ChatStatus } from "ai";
+import { getStoredModel, setStoredModel } from "@/lib/models";
 
 export interface ChatContainerProps {
   initialSessionId: string | null;
@@ -38,10 +40,18 @@ export default function ChatContainer(props: ChatContainerProps) {
   const { user } = useAuth();
   const [isShared, setIsShared] = useState(false);
   const [queued, setQueued] = useState<QueuedMessage[]>([]);
+  // Hydrate-safe: start with default, then read from localStorage in effect
+  const [selectedModel, setSelectedModel] = useState<string>("MiniMax-M3");
+
+  // Read persisted model on mount
+  useEffect(() => {
+    setSelectedModel(getStoredModel());
+  }, []);
 
   const { messages, sendMessage, status, stop, error, regenerate } = useChatStream({
     initialSessionId: props.initialSessionId,
     isTemporary: props.isTempMode,
+    model: selectedModel,
   });
 
   // Track if we're streaming to show queue
@@ -62,6 +72,11 @@ export default function ChatContainer(props: ChatContainerProps) {
       })
       .catch(() => {});
   }, [props.initialSessionId]);
+
+  const handleModelChange = useCallback((modelId: string) => {
+    setSelectedModel(modelId);
+    setStoredModel(modelId);
+  }, []);
 
   const handleSubmit = useCallback(
     (message: { text: string; files?: unknown[] }) => {
@@ -157,7 +172,6 @@ export default function ChatContainer(props: ChatContainerProps) {
   }, [isShared, props.initialSessionId]);
 
   const handleNewChat = useCallback(() => {
-    // Clear current session and start fresh
     try {
       localStorage.removeItem("agenticos-active-session");
     } catch {}
@@ -174,7 +188,8 @@ export default function ChatContainer(props: ChatContainerProps) {
         onExitTemp={props.onExitTemp}
         onStartTemp={props.onStartTemp}
         onToggleShare={handleToggleShare}
-        modelLabel="agenticOS"
+        selectedModel={selectedModel}
+        onModelChange={handleModelChange}
         onRightAction={handleNewChat}
       />
 
@@ -226,9 +241,9 @@ export default function ChatContainer(props: ChatContainerProps) {
         )}
       </div>
 
-      {/* Queue above input when streaming */}
+      {/* Queue above input when streaming — no border-t per Gemini style */}
       {isStreaming && queued.length > 0 && (
-        <div className="flex-shrink-0 border-t bg-background/95 backdrop-blur-md">
+        <div className="flex-shrink-0 bg-background/95 backdrop-blur-md">
           <div className="max-w-3xl mx-auto px-3 md:px-5 pt-2">
             <MessageQueue
               todos={[]}
@@ -239,7 +254,8 @@ export default function ChatContainer(props: ChatContainerProps) {
         </div>
       )}
 
-      <div className="flex-shrink-0 border-t bg-background/95 backdrop-blur-md">
+      {/* Input area — no border-t per Gemini style */}
+      <div className="flex-shrink-0 bg-background/95 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-3 md:px-5 py-3">
           <ChatInput
             onSubmit={handleSubmit}
