@@ -45,7 +45,28 @@ export async function POST(req: Request): Promise<Response> {
   // 3. Resolve session — create one if not provided
   const sessionId = incomingSessionId || (await createSession(userId, isTemporary));
 
-  // 4. API key check
+  // 4. Build messages and update session title for new sessions
+  const incomingMessages = messages.map((m) => ({
+    role: m.role,
+    content: partsToText(m.parts),
+  }));
+  const lastUserMsg = [...incomingMessages].reverse().find((m) => m.role === "user");
+  const msgContent = lastUserMsg?.content?.slice(0, 100) || "New Chat";
+  const newTitle = msgContent.length > 50 ? msgContent.slice(0, 47) + "..." : msgContent;
+  
+  // Update session title if it's a new session or still has default title
+  if (!incomingSessionId) {
+    try {
+      const session = await db.session.findFirst({ where: { id: sessionId, userId } });
+      if (session && session.title === "New Chat") {
+        await db.session.update({ where: { id: sessionId }, data: { title: newTitle } });
+      }
+    } catch (err) {
+      console.error("[chat] failed to update session title:", err);
+    }
+  }
+
+  // 5. API key check
   const apiKey = process.env.MINIMAX_API_KEY;
   if (!apiKey) {
     return new Response(
@@ -54,16 +75,11 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  // 5. Build context (auto-recall from memory/RAG/personalization/skills)
-  const incomingMessages = messages.map((m) => ({
-    role: m.role,
-    content: partsToText(m.parts),
-  }));
+  // 6. Build context (auto-recall from memory/RAG/personalization/skills)
   const ctx = await buildChatContext(userId, incomingMessages);
   const systemPrompt = buildSystemPrompt(formatContextForPrompt(ctx));
 
-  // 6. Save the latest user message to the DB
-  const lastUserMsg = [...incomingMessages].reverse().find((m) => m.role === "user");
+  // 7. Save the latest user message to the DB
   if (lastUserMsg && lastUserMsg.content) {
     try {
       await db.message.create({
@@ -78,7 +94,7 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  // 7. Stream — manually convert UIMessages to ModelMessages to work
+  // 8. Stream — manually convert UIMessages to ModelMessages to work
   // around the AI SDK's convertToModelMessages incompatibility with
   // the MiniMax provider for file parts. The provider wants
   // `part.data` to be raw base64/URL, but convertToModelMessages

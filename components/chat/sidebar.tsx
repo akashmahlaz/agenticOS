@@ -733,24 +733,6 @@ function UserFooter({
             {email}
           </div>
         </div>
-        <div className="flex gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={onOpenSettings}
-            className="p-1.5 rounded-md hover:bg-foreground/10 text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Settings"
-            title="Settings"
-          >
-            <SettingsIcon size={14} />
-          </button>
-          <button
-            onClick={logout}
-            className="p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-            aria-label="Logout"
-            title="Logout"
-          >
-            <LogoutIcon size={13} />
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -892,9 +874,6 @@ export default function Sidebar({
     <div className="w-72 h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col relative">
       {/* Brand header */}
       <BrandHeader onClose={onClose} />
-
-      {/* Mode switcher */}
-      <ModeSwitcher />
 
       {/* Session list */}
       <SessionList
