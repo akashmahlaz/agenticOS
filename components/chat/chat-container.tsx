@@ -10,6 +10,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import type { UIMessage } from "ai";
 import { useAuth } from "@/components/auth-wrapper";
 import {
   Conversation,
@@ -26,6 +27,7 @@ import { useChatStream } from "./use-chat-stream";
 import type { QueuedMessage } from "./queue";
 import type { ChatStatus } from "ai";
 import { getStoredModel, setStoredModel } from "@/lib/models";
+import { loadSessionMessages } from "@/lib/load-messages";
 
 export interface ChatContainerProps {
   initialSessionId: string | null;
@@ -37,19 +39,54 @@ export interface ChatContainerProps {
 }
 
 export default function ChatContainer(props: ChatContainerProps) {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [isShared, setIsShared] = useState(false);
   const [queued, setQueued] = useState<QueuedMessage[]>([]);
   // Hydrate-safe: start with default, then read from localStorage in effect
   const [selectedModel, setSelectedModel] = useState<string>("MiniMax-M3");
+  // Loaded messages for the active session (null = not loaded yet)
+  const [loadedMessages, setLoadedMessages] = useState<UIMessage[] | null>(null);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
   // Read persisted model on mount
   useEffect(() => {
     setSelectedModel(getStoredModel());
   }, []);
 
+  // Load messages when the active session changes
+  useEffect(() => {
+    let cancelled = false;
+
+    // No active session → empty messages
+    if (!props.initialSessionId) {
+      setLoadedMessages([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setIsLoadingMessages(true);
+    loadSessionMessages(props.initialSessionId, token)
+      .then((msgs) => {
+        if (!cancelled) {
+          setLoadedMessages(msgs);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoadedMessages([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingMessages(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [props.initialSessionId, token]);
+
   const { messages, sendMessage, status, stop, error, regenerate } = useChatStream({
     initialSessionId: props.initialSessionId,
+    initialMessages: loadedMessages ?? undefined,
     isTemporary: props.isTempMode,
     model: selectedModel,
   });
@@ -203,6 +240,12 @@ export default function ChatContainer(props: ChatContainerProps) {
             >
               Retry
             </button>
+          </div>
+        ) : isLoadingMessages && messages.length === 0 ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Shimmer duration={1.2}>Loading chat…</Shimmer>
+            </div>
           </div>
         ) : isEmpty(messages) && !isStreaming ? (
           <ChatEmptyState

@@ -46,7 +46,11 @@ export function useChatStream(opts: UseChatStreamOptions) {
   );
 
   const chat = useChat<UIMessage>({
+    // Use sessionId in the chat id so messages don't bleed across sessions
     id: opts.initialSessionId ?? "default",
+    // Seed with loaded messages when a session is selected
+    // (AI SDK 7.x uses `messages`, not `initialMessages`)
+    messages: opts.initialMessages,
     transport,
     onData: (part) => {
       // Capture server-created session id
