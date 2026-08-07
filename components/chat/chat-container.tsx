@@ -1,18 +1,29 @@
 // ChatContainer — the chat orchestrator
 // Composes ChatHeader + ChatMessage + ChatInput + ChatEmptyState
 // Uses useChatStream hook for all the streaming state
+//
+// Queue is shown when there are pending user messages (sent while
+// another response is streaming). All AI Elements primitives are used
+// per official patterns.
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/components/auth-wrapper";
-import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from "@/components/ai-elements/conversation";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import ChatHeader from "./chat-header";
 import ChatMessage from "./chat-message";
 import ChatInput from "./chat-input";
 import ChatEmptyState from "./chat-empty-state";
+import MessageQueue from "./queue";
 import { useChatStream } from "./use-chat-stream";
+import type { QueuedMessage } from "./queue";
+import type { ChatStatus } from "ai";
 
 export interface ChatContainerProps {
   initialSessionId: string | null;
@@ -26,11 +37,15 @@ export interface ChatContainerProps {
 export default function ChatContainer(props: ChatContainerProps) {
   const { user } = useAuth();
   const [isShared, setIsShared] = useState(false);
+  const [queued, setQueued] = useState<QueuedMessage[]>([]);
 
   const { messages, sendMessage, status, stop, error, regenerate } = useChatStream({
     initialSessionId: props.initialSessionId,
     isTemporary: props.isTempMode,
   });
+
+  // Track if we're streaming to show queue
+  const isStreaming = status === "streaming" || status === "submitted";
 
   // Load share state
   useEffect(() => {
@@ -48,14 +63,19 @@ export default function ChatContainer(props: ChatContainerProps) {
       .catch(() => {});
   }, [props.initialSessionId]);
 
-  const isStreaming = status === "streaming" || status === "submitted";
-  const isEmpty = messages.length === 0;
-
   const handleSubmit = useCallback(
     (message: { text: string; files?: unknown[] }) => {
       const text = (message?.text || "").trim();
       if (!text && (!message?.files || message.files.length === 0)) return;
-      if (isStreaming) return;
+
+      if (isStreaming) {
+        // Queue the message to be sent when current stream completes
+        setQueued((q) => [
+          ...q,
+          { id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text },
+        ]);
+        return;
+      }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sendMessage(
@@ -73,6 +93,47 @@ export default function ChatContainer(props: ChatContainerProps) {
       );
     },
     [isStreaming, sendMessage, props.initialSessionId, props.isTempMode]
+  );
+
+  // Send all queued messages when streaming finishes
+  const wasStreamingRef = useRef(false);
+  useEffect(() => {
+    if (wasStreamingRef.current && !isStreaming && queued.length > 0) {
+      const [first, ...rest] = queued;
+      setQueued(rest);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sendMessage(
+        { text: first.text } as any,
+        {
+          body: {
+            sessionId: props.initialSessionId,
+            isTemporary: props.isTempMode,
+          },
+        }
+      );
+    }
+    wasStreamingRef.current = isStreaming;
+  }, [isStreaming, queued, sendMessage, props.initialSessionId, props.isTempMode]);
+
+  const handleRemoveQueued = useCallback((id: string) => {
+    setQueued((q) => q.filter((m) => m.id !== id));
+  }, []);
+
+  const handleSubmitQuestion = useCallback(
+    (answer: Record<string, string | string[]>) => {
+      const text = Object.entries(answer)
+        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
+        .join("\n");
+      if (!text) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sendMessage({ text } as any, {
+        body: {
+          sessionId: props.initialSessionId,
+          isTemporary: props.isTempMode,
+        },
+      });
+    },
+    [sendMessage, props.initialSessionId, props.isTempMode]
   );
 
   const handleSuggestion = useCallback(
@@ -118,7 +179,7 @@ export default function ChatContainer(props: ChatContainerProps) {
               Retry
             </button>
           </div>
-        ) : isEmpty && !isStreaming ? (
+        ) : isEmpty(messages) && !isStreaming ? (
           <ChatEmptyState
             isTempMode={props.isTempMode}
             userName={user?.name?.split(" ")[0]}
@@ -140,6 +201,7 @@ export default function ChatContainer(props: ChatContainerProps) {
                         ? () => regenerate?.()
                         : undefined
                     }
+                    onSubmitQuestion={handleSubmitQuestion}
                   />
                 );
               })}
@@ -154,9 +216,26 @@ export default function ChatContainer(props: ChatContainerProps) {
         )}
       </div>
 
+      {/* Queue above input when streaming */}
+      {isStreaming && queued.length > 0 && (
+        <div className="flex-shrink-0 border-t bg-background/95 backdrop-blur-md">
+          <div className="max-w-3xl mx-auto px-3 md:px-5 pt-2">
+            <MessageQueue
+              todos={[]}
+              messages={queued}
+              onRemoveMessage={handleRemoveQueued}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="flex-shrink-0 border-t bg-background/95 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-3 md:px-5 py-3">
-          <ChatInput onSubmit={handleSubmit} status={status} onStop={() => stop()} />
+          <ChatInput
+            onSubmit={handleSubmit}
+            status={status as ChatStatus}
+            onStop={() => stop()}
+          />
           <p className="text-center text-[10px] text-muted-foreground/60 mt-2 px-2">
             agenticOS can make mistakes. Verify important info.
           </p>
@@ -164,4 +243,8 @@ export default function ChatContainer(props: ChatContainerProps) {
       </div>
     </div>
   );
+}
+
+function isEmpty(messages: { length: number }): boolean {
+  return messages.length === 0;
 }

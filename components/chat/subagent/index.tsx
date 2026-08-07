@@ -1,0 +1,177 @@
+// SubAgentPanel — shows all sub-agent activity using official AI Elements Task
+// Upgraded from subagent-activity.tsx to use the Task primitive for proper
+// collapsible step display.
+// https://elements.ai-sdk.dev/components/task
+
+"use client";
+
+import { Task, TaskTrigger, TaskContent, TaskItem, TaskItemFile } from "@/components/ai-elements/task";
+import {
+  CodeIcon,
+  DatabaseIcon,
+  PenIcon,
+  BarChart3Icon,
+  CheckIcon,
+  XIcon,
+  SearchIcon,
+  GlobeIcon,
+  WrenchIcon,
+  BookOpenIcon,
+  CompassIcon,
+  TerminalIcon,
+  KeyIcon,
+  UsersIcon,
+  GitBranchIcon,
+  Loader2Icon,
+} from "lucide-react";
+
+// Re-export the event type for callers
+export interface SubAgentEvent {
+  agent: string;
+  task: string;
+  status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
+  message: string;
+  toolName?: string;
+  result?: string;
+  durationMs?: number;
+  ts?: number;
+}
+
+const AGENT_META: Record<
+  string,
+  { name: string; icon: React.ElementType; color: string; bg: string }
+> = {
+  researcher: { name: "Researcher", icon: SearchIcon, color: "text-teal", bg: "bg-teal/10 border-teal/20" },
+  coder: { name: "Coder", icon: CodeIcon, color: "text-coral", bg: "bg-coral/10 border-coral/20" },
+  "memory-keeper": { name: "Memory Keeper", icon: DatabaseIcon, color: "text-primary", bg: "bg-primary/10 border-primary/20" },
+  browser: { name: "Browser", icon: CompassIcon, color: "text-info", bg: "bg-info/10 border-info/20" },
+  knowledge: { name: "Knowledge", icon: BookOpenIcon, color: "text-accent-foreground", bg: "bg-accent/20 border-accent/40" },
+  operator: { name: "Operator", icon: TerminalIcon, color: "text-warning", bg: "bg-warning/10 border-warning/20" },
+  writer: { name: "Writer", icon: PenIcon, color: "text-success", bg: "bg-success/10 border-success/20" },
+  analyst: { name: "Analyst", icon: BarChart3Icon, color: "text-warning", bg: "bg-warning/10 border-warning/20" },
+  leadgen: { name: "Lead Gen", icon: UsersIcon, color: "text-teal", bg: "bg-teal/10 border-teal/20" },
+  developer: { name: "Developer", icon: GitBranchIcon, color: "text-coral", bg: "bg-coral/10 border-coral/20" },
+};
+
+const TOOL_ICONS: Record<string, React.ElementType> = {
+  webSearch: GlobeIcon,
+  fetchUrl: GlobeIcon,
+  deepResearch: SearchIcon,
+  runSnippet: WrenchIcon,
+  memorySearch: BookOpenIcon,
+  memoryGet: BookOpenIcon,
+  memoryWrite: BookOpenIcon,
+  search_web: SearchIcon,
+  browse_website: GlobeIcon,
+  extract_links: GlobeIcon,
+  add_document: BookOpenIcon,
+  search_knowledge: SearchIcon,
+  list_documents: BookOpenIcon,
+  get_document: BookOpenIcon,
+  delete_document: BookOpenIcon,
+  run_command: TerminalIcon,
+  check_command: TerminalIcon,
+  secret_list: KeyIcon,
+  secret_get: KeyIcon,
+  secret_save: KeyIcon,
+  secret_delete: KeyIcon,
+  search_people: UsersIcon,
+  enrich_profile: UsersIcon,
+  search_repos: GitBranchIcon,
+  get_repo_info: GitBranchIcon,
+  search_users: GitBranchIcon,
+  get_user_info: GitBranchIcon,
+};
+
+export default function SubAgentPanel({
+  events,
+  isStreaming,
+}: {
+  events: SubAgentEvent[];
+  isStreaming?: boolean;
+}) {
+  if (!events || events.length === 0) return null;
+
+  // Group events by agent
+  const grouped = events.reduce<Record<string, SubAgentEvent[]>>((acc, e) => {
+    if (!acc[e.agent]) acc[e.agent] = [];
+    acc[e.agent].push(e);
+    return acc;
+  }, {});
+
+  return (
+    <div className="space-y-2 mb-3 not-prose">
+      {Object.entries(grouped).map(([agent, agentEvents]) => {
+        const meta = AGENT_META[agent];
+        if (!meta) return null;
+        const lastEvent = agentEvents[agentEvents.length - 1];
+        const isDone = lastEvent.status === "done";
+        const isError = lastEvent.status === "error";
+        const Icon = meta.icon;
+        const stepCount = agentEvents.filter(
+          (e) => e.status === "tool-call" || e.status === "tool-result" || e.status === "thinking"
+        ).length;
+
+        return (
+          <Task key={agent} defaultOpen={!isDone && isStreaming} className={`rounded-xl border ${meta.bg} overflow-hidden`}>
+            <TaskTrigger
+              title={`${meta.name} · ${lastEvent.task}`}
+            >
+              <div className="flex w-full items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:text-foreground">
+                <div className={`w-7 h-7 rounded-lg bg-background/60 flex items-center justify-center ${meta.color}`}>
+                  <Icon size={14} />
+                </div>
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs font-semibold ${meta.color}`}>{meta.name}</span>
+                    <span className="text-[10px] text-muted-foreground/70 truncate">
+                      · {lastEvent.task}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground truncate">
+                    {lastEvent.message}
+                  </div>
+                </div>
+                <div className="flex-shrink-0 flex items-center gap-1.5">
+                  {stepCount > 0 && (
+                    <span className="text-[10px] text-muted-foreground/60">
+                      {stepCount} step{stepCount === 1 ? "" : "s"}
+                    </span>
+                  )}
+                  {isError ? (
+                    <XIcon size={13} className="text-destructive" />
+                  ) : isDone ? (
+                    <CheckIcon size={13} className="text-success" />
+                  ) : (
+                    <Loader2Icon size={13} className="text-muted-foreground animate-spin" />
+                  )}
+                </div>
+              </div>
+            </TaskTrigger>
+            <TaskContent>
+              {agentEvents.map((e, i) => {
+                if (e.status === "started" || e.status === "done" || e.status === "error")
+                  return null;
+                const ToolIcon = e.toolName ? TOOL_ICONS[e.toolName] || WrenchIcon : null;
+                return (
+                  <TaskItem key={i} className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                    {ToolIcon && <ToolIcon size={12} className="text-current/70 flex-shrink-0" />}
+                    <span className="truncate flex-1">{e.message}</span>
+                    {e.toolName && <TaskItemFile>{e.toolName}</TaskItemFile>}
+                  </TaskItem>
+                );
+              })}
+              {lastEvent.durationMs !== undefined && (
+                <div className="text-[10px] text-muted-foreground/60 mt-1 pl-5">
+                  ⏱ {lastEvent.durationMs < 1000
+                    ? `${lastEvent.durationMs}ms`
+                    : `${(lastEvent.durationMs / 1000).toFixed(1)}s`}
+                </div>
+              )}
+            </TaskContent>
+          </Task>
+        );
+      })}
+    </div>
+  );
+}
