@@ -79,22 +79,11 @@ export async function POST(req: Request): Promise<Response> {
   const ctx = await buildChatContext(userId, incomingMessages);
   const systemPrompt = buildSystemPrompt(formatContextForPrompt(ctx));
 
-  // 7. Save the latest user message to the DB
-  if (lastUserMsg && lastUserMsg.content) {
-    try {
-      await db.message.create({
-        data: {
-          sessionId,
-          role: "user",
-          content: lastUserMsg.content,
-        },
-      });
-    } catch (err) {
-      console.error("[chat] failed to save user message:", err);
-    }
-  }
+  // Note: User + assistant messages are now saved automatically by the
+  // onFinish callback in buildUIMessageStream (per AI SDK 7.x pattern).
+  // See: https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-message-persistence
 
-  // 8. Stream — manually convert UIMessages to ModelMessages to work
+  // 7. Stream — manually convert UIMessages to ModelMessages to work
   // around the AI SDK's convertToModelMessages incompatibility with
   // the MiniMax provider for file parts. The provider wants
   // `part.data` to be raw base64/URL, but convertToModelMessages
@@ -146,7 +135,14 @@ export async function POST(req: Request): Promise<Response> {
   //    `result.toUIMessageStream({ sendReasoning: true })` — the official
   //    AI SDK pattern that emits proper start/delta/end lifecycle chunks.
   return buildUIMessageStream(
-    { userId, sessionId, messages: incomingMessages, model: selectedModel },
+    {
+      userId,
+      sessionId,
+      messages: incomingMessages,
+      uiMessages: messages, // full UIMessage[] for save-on-finish
+      model: selectedModel,
+      isTemporary: !!isTemporary,
+    },
     result
   );
 }

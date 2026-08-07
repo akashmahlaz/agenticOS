@@ -10,10 +10,14 @@
 //     `result.fullStream` manually).
 //   - Use `writer.write({ type: 'data-*' })` for our custom sub-agent,
 //     sources, session, finish, error, memory, and learning events.
+//   - Use `originalMessages` + `onFinish` callback in toUIMessageStream
+//     to persist both user + assistant messages to the database
+//     (per https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-message-persistence)
 
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
+  type UIMessage,
 } from "ai";
 import {
   onSubAgentProgress,
@@ -22,6 +26,7 @@ import {
 } from "@/lib/agents/orchestrator";
 import { autoCaptureFromTurn } from "@/lib/memory/manager";
 import { captureLearnings } from "@/lib/personalization/self-learning";
+import { saveLastNMessages } from "@/lib/chat/save-message";
 
 // We rely on the `ai` SDK's own types. The `streamText` return type is
 // complex; declaring it as `unknown` here keeps the boundary simple and
@@ -33,7 +38,11 @@ export interface StreamMeta {
   userId: string;
   sessionId: string | null;
   messages: Array<{ role: string; content: string }>;
+  /** Full UIMessage[] for save-on-finish (per AI SDK docs) */
+  uiMessages: UIMessage[];
   model: string;
+  /** True for temp chats — skip DB save */
+  isTemporary?: boolean;
 }
 
 export interface SubAgentEvent {
@@ -155,6 +164,21 @@ export function buildUIMessageStream(
           sendSources: false, // we collect sources ourselves below
           sendFinish: true,
           sendStart: true,
+          // Per https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-message-persistence
+          // Pass original messages so onFinish can save them all
+          originalMessages: meta.uiMessages,
+          // Save both user + assistant messages when stream completes
+          // (skip for temporary chats)
+          onFinish: async ({ messages }: { messages: UIMessage[] }) => {
+            if (meta.isTemporary || !meta.sessionId) return;
+            await saveLastNMessages({
+              sessionId: meta.sessionId,
+              userId: meta.userId,
+              messages,
+              model: meta.model,
+              n: 2, // last user + last assistant
+            });
+          },
         });
 
         for await (const chunk of dropEmptyDeltas(source)) {
