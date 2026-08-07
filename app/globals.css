@@ -128,37 +128,38 @@
    Warm grays (no blue tint), off-white text, subtle borders
    ────────────────────────────────────────────────────────────── */
 .dark {
-  --background: oklch(0.16 0.003 80);
-  --foreground: oklch(0.96 0.002 80);
+  /* Gemini-style near-pure black background (oklch ~0.08 ≈ #0F0F0F) */
+  --background: oklch(0.10 0 0);
+  --foreground: oklch(0.98 0 0);
 
-  --card: oklch(0.19 0.003 80);
-  --card-foreground: oklch(0.96 0.002 80);
+  --card: oklch(0.14 0 0);
+  --card-foreground: oklch(0.98 0 0);
 
-  /* Elevated input — clearly distinct from page bg (0.16) and card (0.19) */
-  --input-elevated: oklch(0.25 0.003 80);
-  --input-elevated-foreground: oklch(0.96 0.002 80);
+  /* Elevated input — clearly distinct from page bg (0.10) and card (0.14) */
+  --input-elevated: oklch(0.20 0 0);
+  --input-elevated-foreground: oklch(0.98 0 0);
 
-  --popover: oklch(0.21 0.003 80);
-  --popover-foreground: oklch(0.96 0.002 80);
+  --popover: oklch(0.14 0 0);
+  --popover-foreground: oklch(0.98 0 0);
 
   /* Teal primary — slightly desaturated for professional feel */
   --primary: oklch(0.7 0.12 195);
-  --primary-foreground: oklch(0.16 0.003 80);
+  --primary-foreground: oklch(0.10 0 0);
 
-  --secondary: oklch(0.23 0.003 80);
-  --secondary-foreground: oklch(0.96 0.002 80);
+  --secondary: oklch(0.18 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
 
-  --muted: oklch(0.22 0.003 80);
-  --muted-foreground: oklch(0.62 0.005 80);
+  --muted: oklch(0.18 0 0);
+  --muted-foreground: oklch(0.65 0 0);
 
-  --accent: oklch(0.26 0.04 195);
+  --accent: oklch(0.22 0.04 195);
   --accent-foreground: oklch(0.85 0.05 195);
 
   --destructive: oklch(0.65 0.22 27);
   --destructive-foreground: oklch(0.98 0 0);
 
-  --border: oklch(0.28 0.003 80);
-  --input: oklch(0.24 0.003 80);
+  --border: oklch(0.22 0 0);
+  --input: oklch(0.20 0 0);
   --ring: oklch(0.7 0.12 195);
 
   --sidebar: oklch(0.18 0.003 80);

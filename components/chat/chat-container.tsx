@@ -156,6 +156,14 @@ export default function ChatContainer(props: ChatContainerProps) {
       .catch(() => {});
   }, [isShared, props.initialSessionId]);
 
+  const handleNewChat = useCallback(() => {
+    // Clear current session and start fresh
+    try {
+      localStorage.removeItem("agenticos-active-session");
+    } catch {}
+    window.location.href = "/";
+  }, []);
+
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       <ChatHeader
@@ -166,6 +174,8 @@ export default function ChatContainer(props: ChatContainerProps) {
         onExitTemp={props.onExitTemp}
         onStartTemp={props.onStartTemp}
         onToggleShare={handleToggleShare}
+        modelLabel="agenticOS"
+        onRightAction={handleNewChat}
       />
 
       <div className="flex-1 min-h-0 overflow-hidden">

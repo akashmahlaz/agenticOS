@@ -1,6 +1,7 @@
-// ChatInput — prompt input with file attachments
-// Uses AI Elements PromptInput with proper Menu wrapping for attachments
+// ChatInput — Gemini-style prompt input
 // Pattern from https://elements.ai-sdk.dev/components/prompt-input
+// Gemini-style layout: + | placeholder | mic | circular submit button
+// Single rounded bar, dark gray input on near-black background
 
 "use client";
 
@@ -20,6 +21,7 @@ import {
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
 import { Attachment, AttachmentPreview, AttachmentRemove, Attachments } from "@/components/ai-elements/attachments";
+import { MicIcon, PlusIcon } from "lucide-react";
 import type { ChatStatus } from "ai";
 
 // Attachments display — must be inside PromptInputHeader
@@ -42,55 +44,80 @@ export interface ChatInputProps {
   onSubmit: (message: { text: string; files?: unknown[] }) => void;
   status: ChatStatus;
   onStop: () => void;
+  placeholder?: string;
 }
 
-export default function ChatInput({ onSubmit, status, onStop }: ChatInputProps) {
+export default function ChatInput({
+  onSubmit,
+  status,
+  onStop,
+  placeholder = "Ask agenticOS",
+}: ChatInputProps) {
   const handleSubmit = (message: PromptInputMessage) => {
     const hasText = Boolean(message.text);
     const hasFiles = Boolean(message.files?.length);
     if (!hasText && !hasFiles) return;
-    onSubmit({
-      text: message.text,
-      files: message.files,
-    });
+    onSubmit({ text: message.text, files: message.files });
   };
+
+  const isStreaming = status === "streaming" || status === "submitted";
 
   return (
     <PromptInput
       onSubmit={handleSubmit}
       globalDrop
       multiple
-      className="relative border border-foreground/10 bg-input-elevated shadow-[0_2px_24px_-8px_rgba(0,0,0,0.12)] dark:shadow-[0_4px_28px_-4px_rgba(0,0,0,0.4)] focus-within:border-foreground/30 rounded-[28px] transition-all"
+      className="relative border border-foreground/10 bg-muted/30 shadow-none focus-within:border-foreground/20 rounded-[28px] transition-all"
     >
       <PromptInputHeader>
         <PromptInputAttachmentsDisplay />
       </PromptInputHeader>
       <PromptInputBody>
         <PromptInputTextarea
-          placeholder="Ask anything…"
-          className="min-h-12 max-h-40 text-[15px] leading-relaxed placeholder:text-muted-foreground/60 resize-none border-0 !bg-transparent !shadow-none !ring-0 px-4 py-3 focus-visible:!outline-none focus-visible:!ring-0"
+          placeholder={placeholder}
+          className="min-h-12 max-h-40 text-[16px] leading-relaxed placeholder:text-muted-foreground/60 resize-none border-0 !bg-transparent !shadow-none !ring-0 px-4 py-3 focus-visible:!outline-none focus-visible:!ring-0"
           rows={1}
         />
       </PromptInputBody>
       <PromptInputFooter className="px-2 pb-2 pt-0">
         <PromptInputTools className="gap-0.5">
-          {/* Action menu — MUST wrap PromptInputActionAddAttachments */}
+          {/* + action menu — MUST wrap PromptInputActionAddAttachments */}
           <PromptInputActionMenu>
-            <PromptInputActionMenuTrigger />
-            <PromptInputActionMenuContent>
+            <PromptInputActionMenuTrigger
+              aria-label="Add"
+              className="!h-9 !w-9 !rounded-full text-muted-foreground hover:!bg-muted hover:!text-foreground !bg-transparent !shadow-none"
+            >
+              <PlusIcon size={20} strokeWidth={1.75} />
+            </PromptInputActionMenuTrigger>
+            <PromptInputActionMenuContent align="start">
               <PromptInputActionAddAttachments />
             </PromptInputActionMenuContent>
           </PromptInputActionMenu>
         </PromptInputTools>
+
+        {/* Mic icon (decorative for now) — Gemini's voice mode */}
+        <button
+          type="button"
+          aria-label="Voice input"
+          className="!h-9 !w-9 !rounded-full !bg-transparent !shadow-none !text-muted-foreground hover:!text-foreground hover:!bg-muted/40"
+          onClick={() => {
+            // Hook into voice mode later
+          }}
+        >
+          <MicIcon size={18} strokeWidth={1.75} />
+        </button>
+
+        {/* Submit — dark blue circle, white icon (Gemini's submit button) */}
         <PromptInputSubmit
           status={status}
+          onStop={onStop}
           onClick={(e) => {
             if (status === "streaming" || status === "submitted") {
               e.preventDefault();
               onStop();
             }
           }}
-          className="!h-10 !w-10 !rounded-full !bg-foreground !text-background hover:!bg-foreground/90 disabled:!bg-muted disabled:!text-muted-foreground shadow-sm transition-all [&_svg]:!size-4"
+          className="!h-10 !w-10 !rounded-full !bg-[#1A1A2E] dark:!bg-[#2A2A4A] !text-white hover:!bg-[#252540] dark:hover:!bg-[#353560] disabled:!bg-muted disabled:!text-muted-foreground shadow-sm transition-all [&_svg]:!size-4"
         />
       </PromptInputFooter>
     </PromptInput>
