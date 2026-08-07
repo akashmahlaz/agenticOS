@@ -98,7 +98,12 @@ export default function ChatContainer(props: ChatContainerProps) {
 
   const { messages, sendMessage, status, stop, error, regenerate } = useChatStream({
     initialSessionId: props.initialSessionId,
-    initialMessages: loadedMessages ?? undefined,
+    // Priority: server-provided messages (from /chat/[id] RSC) first.
+    // If those aren't available, use the API-fetched messages (loadedMessages).
+    // When neither exists (new chat), use an empty array.
+    initialMessages:
+      props.initialMessages ??
+      (loadedMessages !== null ? loadedMessages : undefined),
     isTemporary: props.isTempMode,
     model: selectedModel,
   });
