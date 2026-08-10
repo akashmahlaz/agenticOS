@@ -78,6 +78,11 @@ import {
   BrainIcon,
   SearchIcon,
   WrenchIcon,
+  CalculatorIcon,
+  GlobeIcon,
+  DatabaseIcon,
+  CodeIcon,
+  FileTextIcon,
 } from "lucide-react";
 
 export interface ChatMessageProps {
@@ -124,6 +129,118 @@ function shortenLabel(text: string, max = 70): string {
     return text.slice(0, sentenceEnd + 1);
   }
   return text.length > max ? text.slice(0, max) + "…" : text;
+}
+
+/**
+ * Map a tool name to the right lucide icon (per the patterns in your commit
+ * f8ad7d7). Tool names are matched against keywords to pick an appropriate icon.
+ */
+function iconForToolName(toolName: string) {
+  const lower = toolName.toLowerCase();
+  // Search / web
+  if (
+    lower.includes("search") ||
+    lower.includes("websearch") ||
+    lower.includes("google") ||
+    lower.includes("bing")
+  )
+    return SearchIcon;
+  // Browse / fetch URL
+  if (
+    lower.includes("browser") ||
+    lower.includes("fetchurl") ||
+    lower.includes("browse") ||
+    lower.includes("delegate") ||
+    lower.includes("scrap") ||
+    lower.includes("crawl")
+  )
+    return GlobeIcon;
+  // Calculator / math
+  if (
+    lower.includes("calc") ||
+    lower.includes("math") ||
+    lower.includes("compute")
+  )
+    return CalculatorIcon;
+  // Database / query
+  if (
+    lower.includes("database") ||
+    lower.includes("query") ||
+    lower.includes("sql") ||
+    lower.includes("db_")
+  )
+    return DatabaseIcon;
+  // Code / exec / shell
+  if (
+    lower.includes("code") ||
+    lower.includes("exec") ||
+    lower.includes("shell") ||
+    lower.includes("bash") ||
+    lower.includes("command")
+  )
+    return CodeIcon;
+  // File operations
+  if (
+    lower.includes("file") ||
+    lower.includes("readfile") ||
+    lower.includes("writefile") ||
+    lower.includes("open")
+  )
+    return FileTextIcon;
+  // Sub-agents (delegate to researcher, coder, etc.)
+  if (lower.startsWith("delegateto") || lower.includes("agent"))
+    return BrainIcon;
+  // Default: wrench
+  return WrenchIcon;
+}
+
+/**
+ * Auto-detect an icon from a reasoning text (per the patterns in your commit
+ * f8ad7d7 — detectStepIcon). Looks for keywords to choose the right icon.
+ */
+function iconForText(text: string) {
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("search") ||
+    lower.includes("look up") ||
+    lower.includes("find ") ||
+    lower.includes("look for")
+  )
+    return SearchIcon;
+  if (
+    lower.includes("calculat") ||
+    lower.includes("math") ||
+    lower.includes("compute")
+  )
+    return CalculatorIcon;
+  if (
+    lower.includes("fetch") ||
+    lower.includes("read") ||
+    lower.includes("browse") ||
+    lower.includes("visit")
+  )
+    return GlobeIcon;
+  if (
+    lower.includes("databas") ||
+    lower.includes("query") ||
+    lower.includes("sql")
+  )
+    return DatabaseIcon;
+  if (
+    lower.includes("code") ||
+    lower.includes("exec") ||
+    lower.includes("run a command")
+  )
+    return CodeIcon;
+  if (lower.includes("file") || lower.includes("open"))
+    return FileTextIcon;
+  if (
+    lower.includes("tool") ||
+    lower.includes("call") ||
+    lower.includes("execute")
+  )
+    return WrenchIcon;
+  return BrainIcon;
 }
 
 export default function ChatMessage({
@@ -299,7 +416,8 @@ export default function ChatMessage({
         const isLastStep = i === parts.length - 1;
         steps.push({
           key: `reasoning-${i}`,
-          icon: BrainIcon,
+          // Auto-detect icon from reasoning text (per f8ad7d7 pattern)
+          icon: iconForText(p.text),
           label: shortenLabel(p.text),
           description: p.text.length > 70 ? p.text : undefined,
           status: isLastStep && isStreaming ? "active" : "complete",
@@ -335,7 +453,10 @@ export default function ChatMessage({
 
         steps.push({
           key: `tool-${i}-${p.toolCallId ?? i}`,
-          icon: thinkingText || thinkingReason ? BrainIcon : WrenchIcon,
+          // Icon from tool name (per f8ad7d7 pattern):
+          //   delegateToBrowser → GlobeIcon, fetchUrl → GlobeIcon,
+          //   webSearch → SearchIcon, calc → CalculatorIcon, etc.
+          icon: iconForToolName(toolName),
           label,
           description: undefined,
           status: isLastStep && isStreaming ? "active" : "complete",
@@ -362,9 +483,7 @@ export default function ChatMessage({
           ((prev.type === "text" && typeof prev.text === "string") ||
             prev.type === "reasoning");
         const label = hasPrevThinking
-          ? shortenLabel(
-              prev.type === "text" ? prev.text : prev.text
-            )
+          ? shortenLabel(prev.type === "text" ? prev.text : prev.text)
           : `Found ${consecutive.length} source${consecutive.length === 1 ? "" : "s"}`;
 
         steps.push({
@@ -437,34 +556,57 @@ export default function ChatMessage({
           <SubAgentActivity events={subAgentEvents} isStreaming={isStreaming} />
         )}
 
-        {/* ── Chain of Thought (EXACT official pattern) ──────────────────────
-            https://elements.ai-sdk.dev/components/chain-of-thought
-            <ChainOfThought defaultOpen>
-              <ChainOfThoughtHeader />     ← no children, default label
-              <ChainOfThoughtContent>
-                <ChainOfThoughtStep icon={X} label="..." status="...">
-                  {output as children}      ← badges, image, tool output
-                </ChainOfThoughtStep>
-              </ChainOfThoughtContent>
-            </ChainOfThought>
+        {/* ── Chain of Thought (EXACT official pattern, with polished header) ─
+            Per https://elements.ai-sdk.dev/components/chain-of-thought
+            Per your commit f8ad7d7 — adds:
+              • BrainIcon in amber in the header
+              • Step counter "3/12"
+              • Active step indicator with title preview
         */}
         {!isUser && useCoT && cotSteps.length > 0 && (
-          <ChainOfThought defaultOpen className="mb-3 not-prose">
-            <ChainOfThoughtHeader />
-            <ChainOfThoughtContent>
-              {cotSteps.map((step) => (
-                <ChainOfThoughtStep
-                  key={step.key}
-                  icon={step.icon}
-                  label={step.label}
-                  description={step.description}
-                  status={step.status}
-                >
-                  {step.children}
-                </ChainOfThoughtStep>
-              ))}
-            </ChainOfThoughtContent>
-          </ChainOfThought>
+          (() => {
+            const done = cotSteps.filter(
+              (s: { status: string }) => s.status === "complete"
+            ).length;
+            const activeStep = cotSteps.find(
+              (s: { status: string }) => s.status === "active"
+            );
+            return (
+              <ChainOfThought
+                defaultOpen
+                className="mb-3 not-prose"
+              >
+                <ChainOfThoughtHeader>
+                  <span className="inline-flex items-center gap-2">
+                    <BrainIcon className="size-3.5 text-amber-500" />
+                    <span className="text-xs font-medium">Chain of Thought</span>
+                    <span className="text-[10px] text-muted-foreground/60">
+                      {done}/{cotSteps.length}
+                    </span>
+                    {isStreaming && activeStep && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-amber-500">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        {(activeStep.label ?? "").slice(0, 50)}
+                      </span>
+                    )}
+                  </span>
+                </ChainOfThoughtHeader>
+                <ChainOfThoughtContent>
+                  {cotSteps.map((step) => (
+                    <ChainOfThoughtStep
+                      key={step.key}
+                      icon={step.icon}
+                      label={step.label}
+                      description={step.description}
+                      status={step.status}
+                    >
+                      {step.children}
+                    </ChainOfThoughtStep>
+                  ))}
+                </ChainOfThoughtContent>
+              </ChainOfThought>
+            );
+          })()
         )}
 
         {/* ── Reasoning (single continuous block, per official docs) ─────────
