@@ -16,8 +16,11 @@ import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
+  ConversationDownload,
+  ConversationEmptyState,
 } from "@/components/ai-elements/conversation";
 import { Shimmer } from "@/components/ai-elements/shimmer";
+import { MessageSquareIcon } from "lucide-react";
 import ChatHeader from "./chat-header";
 import ChatMessage from "./chat-message";
 import ChatInput from "./chat-input";
@@ -296,6 +299,8 @@ export default function ChatContainer(props: ChatContainerProps) {
                 </div>
               )}
             </ConversationContent>
+            {/* Download chat as Markdown — official ConversationDownload pattern */}
+            <ConversationDownload messages={messages} />
             <ConversationScrollButton />
           </Conversation>
         )}
