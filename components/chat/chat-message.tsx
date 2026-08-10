@@ -49,7 +49,6 @@ import type { UIMessage } from "ai";
 import {
   Message,
   MessageContent,
-  MessageResponse,
 } from "@/components/ai-elements/message";
 import {
   Reasoning,
@@ -74,6 +73,7 @@ import SubAgentActivity, { type SubAgentEvent } from "./subagent-activity";
 import ToolPart from "./message-parts/tool-part";
 import InlineQuestion from "./inline-question";
 import MessageActionBar from "./message-action-bar";
+import MarkdownText from "./markdown-text";
 import {
   BrainIcon,
   SearchIcon,
@@ -320,32 +320,6 @@ export default function ChatMessage({
     // (Tool details are rendered as sibling <ToolPart> components below,
     // not inside CoT step children — per commit e3985a9 and the official
     // Tool pattern at https://elements.ai-sdk.dev/components/tool)
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const subagentChildren = (p: any) => {
-      const task = p.data?.task;
-      const result = p.data?.result;
-      return (
-        <div className="mt-1 space-y-2 text-xs">
-          {task && (
-            <div>
-              <div className="text-muted-foreground mb-1">Task</div>
-              <MessageResponse>{task}</MessageResponse>
-            </div>
-          )}
-          {result && (
-            <div>
-              <div className="text-muted-foreground mb-1">Result</div>
-              <MessageResponse>
-                {typeof result === "string"
-                  ? result
-                  : JSON.stringify(result, null, 2)}
-              </MessageResponse>
-            </div>
-          )}
-        </div>
-      );
-    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sourceChildren = (sources: any[]) => (
@@ -665,9 +639,7 @@ export default function ChatMessage({
                 if (isFollowedByAction) return null;
               }
               return (
-                <MessageResponse key={`text-${message.id}-${i}`}>
-                  {p.text}
-                </MessageResponse>
+                <MarkdownText key={`text-${message.id}-${i}`} text={p.text} />
               );
             }
 
