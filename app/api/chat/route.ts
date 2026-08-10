@@ -107,6 +107,22 @@ export async function POST(req: Request): Promise<Response> {
     system: systemPrompt,
     messages: modelMessages,
     tools,
+    // Enable extended thinking for reasoning-capable MiniMax models.
+    // Per MiniMax docs (https://platform.minimax.io/docs/api-reference/text-anthropic-api):
+    //   - M3: thinking off by default, enable with `{"type": "adaptive"}`
+    //   - M2.x: thinking is always on, can be controlled via `{"type": "enabled", "budgetTokens": N}`
+    // The AI SDK 7 streamText emits `reasoning-*` UIMessageStream chunks when the
+    // model produces `thinking` blocks. Combined with `sendReasoning: true` in
+    // toUIMessageStream, this gives the user a visible chain of thought.
+    providerOptions: {
+      anthropic: (() => {
+        if (selectedModel === "MiniMax-M3") {
+          return { thinking: { type: "adaptive" as const } };
+        }
+        // M2.x and M2.5/2.7 — explicit budget
+        return { thinking: { type: "enabled" as const, budgetTokens: 10000 } };
+      })(),
+    },
     // Agentic loop: keep working until the task is complete OR
     // we hit the safety limit of 20 steps. The agent signals
     // completion by including `<!-- TASK_COMPLETE -->` in its
