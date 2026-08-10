@@ -1,46 +1,23 @@
 // ChatMessage — renders a single message using AI Elements.
 //
-// Follows the official Vercel AI Elements CoT example EXACTLY:
-//   https://elements.ai-sdk.dev/components/chain-of-thought
+// Follows the exact e3985a9 commit architecture:
+//   https://github.com/akashmahlaz/agenticOS/commit/e3985a9
 //
-// Official pattern from the example:
-//   <ChainOfThought defaultOpen>
-//     <ChainOfThoughtHeader />
-//     <ChainOfThoughtContent>
-//       <ChainOfThoughtStep
-//         icon={SearchIcon}
-//         label="Searching for profiles for Hayden Bleasel"
-//         status="complete"
-//       >
-//         <ChainOfThoughtSearchResults>
-//           <ChainOfThoughtSearchResult>x.com</ChainOfThoughtSearchResult>
-//         </ChainOfThoughtSearchResults>
-//       </ChainOfThoughtStep>
-//       <ChainOfThoughtStep
-//         label="Hayden Bleasel is an Australian..."  ← THE ANSWER
-//         status="complete"
-//       />
-//       <ChainOfThoughtStep
-//         icon={SearchIcon}
-//         label="Searching for recent work..."
-//         status="active"
-//       >
-//         <ChainOfThoughtSearchResults>...</ChainOfThoughtSearchResults>
-//       </ChainOfThoughtStep>
-//     </ChainOfThoughtContent>
-//   </ChainOfThought>
+// The rendering order is FIXED and SIMPLE (per the official AI Elements
+// Chatbot example at https://elements.ai-sdk.dev/examples/chatbot and
+// the Chain of Thought example):
 //
-// Key rules from the official example:
-//   1. Each step = ONE action with a SHORT label
-//   2. children = the OUTPUT of that action (badges, image, tool output)
-//   3. Final answer = last step's label (no icon, no children)
-//   4. The "active" step is the one currently happening
+//   1. SubAgentPanel       (data-subagent events)
+//   2. ChainOfThought      (reasoning parts → parsed into steps)
+//   3. Sources             (source-url parts, one block)
+//   4. ToolPart × N        (each tool-* part as a separate official Tool card)
+//   5. InlineQuestion      (data-question events)
+//   6. Text                (text parts rendered with custom MarkdownText)
+//   7. Action bar          (copy + regenerate)
 //
-// Per https://elements.ai-sdk.dev/components/reasoning:
-//   "If your model outputs discrete, labeled steps (search queries,
-//    tool calls, distinct thought stages), consider using the
-//    Chain of Thought component instead for a more structured
-//    visual representation."
+// Tool calls are NOT nested inside CoT. Reasoning is NOT interleaved with
+// tools. Each part type has its own section, in the order above. This is
+// the official "switch (part.type)" pattern from the docs.
 
 "use client";
 
@@ -57,191 +34,34 @@ import {
 } from "@/components/ai-elements/reasoning";
 import {
   Sources,
-  SourcesContent,
   SourcesTrigger,
+  SourcesContent,
   Source,
 } from "@/components/ai-elements/sources";
 import {
   ChainOfThought,
-  ChainOfThoughtContent,
   ChainOfThoughtHeader,
-  ChainOfThoughtSearchResults,
-  ChainOfThoughtSearchResult,
+  ChainOfThoughtContent,
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
+import { Shimmer } from "@/components/ai-elements/shimmer";
+import { BrainIcon, SearchIcon, FileTextIcon } from "lucide-react";
 import SubAgentActivity, { type SubAgentEvent } from "./subagent-activity";
 import ToolPart from "./message-parts/tool-part";
 import InlineQuestion from "./inline-question";
 import MessageActionBar from "./message-action-bar";
 import MarkdownText from "./markdown-text";
-import {
-  BrainIcon,
-  SearchIcon,
-  WrenchIcon,
-  CalculatorIcon,
-  GlobeIcon,
-  DatabaseIcon,
-  CodeIcon,
-  FileTextIcon,
-} from "lucide-react";
 
 export interface ChatMessageProps {
   message: UIMessage;
   isLast: boolean;
   isStreaming: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onRegenerate?: () => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onSubmitQuestion?: (values: Record<string, string | string[]>) => void;
 }
 
-/**
- * Per official docs:
- *   "If your model outputs discrete, labeled steps (search queries,
- *    tool calls, distinct thought stages), consider using the
- *    Chain of Thought component instead."
- *
- * Use CoT when: tool calls, sub-agent events, or source URLs present.
- * Use Reasoning when: pure continuous thinking text.
- */
-function hasDiscreteSteps(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  parts: any[]
-): boolean {
-  return parts.some(
-    (p) =>
-      (typeof p?.type === "string" && p.type.startsWith("tool-")) ||
-      p?.type === "dynamic-tool" ||
-      p?.type === "data-subagent" ||
-      p?.type === "source-url"
-  );
-}
-
-/**
- * Shorten a text to a label-friendly version: first sentence, or first 60 chars.
- * Mirrors the pattern in the official CoT example labels.
- */
-function shortenLabel(text: string, max = 70): string {
-  if (!text) return "";
-  // Try first sentence
-  const sentenceEnd = text.search(/[.!?]\s/);
-  if (sentenceEnd > 0 && sentenceEnd < max) {
-    return text.slice(0, sentenceEnd + 1);
-  }
-  return text.length > max ? text.slice(0, max) + "…" : text;
-}
-
-/**
- * Map a tool name to the right lucide icon (per the patterns in your commit
- * f8ad7d7). Tool names are matched against keywords to pick an appropriate icon.
- */
-function iconForToolName(toolName: string) {
-  const lower = toolName.toLowerCase();
-  // Search / web
-  if (
-    lower.includes("search") ||
-    lower.includes("websearch") ||
-    lower.includes("google") ||
-    lower.includes("bing")
-  )
-    return SearchIcon;
-  // Browse / fetch URL
-  if (
-    lower.includes("browser") ||
-    lower.includes("fetchurl") ||
-    lower.includes("browse") ||
-    lower.includes("delegate") ||
-    lower.includes("scrap") ||
-    lower.includes("crawl")
-  )
-    return GlobeIcon;
-  // Calculator / math
-  if (
-    lower.includes("calc") ||
-    lower.includes("math") ||
-    lower.includes("compute")
-  )
-    return CalculatorIcon;
-  // Database / query
-  if (
-    lower.includes("database") ||
-    lower.includes("query") ||
-    lower.includes("sql") ||
-    lower.includes("db_")
-  )
-    return DatabaseIcon;
-  // Code / exec / shell
-  if (
-    lower.includes("code") ||
-    lower.includes("exec") ||
-    lower.includes("shell") ||
-    lower.includes("bash") ||
-    lower.includes("command")
-  )
-    return CodeIcon;
-  // File operations
-  if (
-    lower.includes("file") ||
-    lower.includes("readfile") ||
-    lower.includes("writefile") ||
-    lower.includes("open")
-  )
-    return FileTextIcon;
-  // Sub-agents (delegate to researcher, coder, etc.)
-  if (lower.startsWith("delegateto") || lower.includes("agent"))
-    return BrainIcon;
-  // Default: wrench
-  return WrenchIcon;
-}
-
-/**
- * Auto-detect an icon from a reasoning text (per the patterns in your commit
- * f8ad7d7 — detectStepIcon). Looks for keywords to choose the right icon.
- */
-function iconForText(text: string) {
-  const lower = text.toLowerCase();
-  if (
-    lower.includes("search") ||
-    lower.includes("look up") ||
-    lower.includes("find ") ||
-    lower.includes("look for")
-  )
-    return SearchIcon;
-  if (
-    lower.includes("calculat") ||
-    lower.includes("math") ||
-    lower.includes("compute")
-  )
-    return CalculatorIcon;
-  if (
-    lower.includes("fetch") ||
-    lower.includes("read") ||
-    lower.includes("browse") ||
-    lower.includes("visit")
-  )
-    return GlobeIcon;
-  if (
-    lower.includes("databas") ||
-    lower.includes("query") ||
-    lower.includes("sql")
-  )
-    return DatabaseIcon;
-  if (
-    lower.includes("code") ||
-    lower.includes("exec") ||
-    lower.includes("run a command")
-  )
-    return CodeIcon;
-  if (lower.includes("file") || lower.includes("open"))
-    return FileTextIcon;
-  if (
-    lower.includes("tool") ||
-    lower.includes("call") ||
-    lower.includes("execute")
-  )
-    return WrenchIcon;
-  return BrainIcon;
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyPart = any;
 
 export default function ChatMessage({
   message,
@@ -252,21 +72,9 @@ export default function ChatMessage({
 }: ChatMessageProps) {
   const isUser = message.role === "user";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const parts = (message.parts as any[]) ?? [];
+  const parts = (message.parts as AnyPart[]) ?? [];
 
-  // ── Reasoning parts (per official Reasoning pattern) ──────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const reasoningParts = parts.filter(
-    (p) => p.type === "reasoning" && typeof p.text === "string"
-  );
-  const reasoningText = reasoningParts.map((p) => p.text).join("\n\n");
-  const hasReasoning = reasoningParts.length > 0;
-  const lastPart = parts[parts.length - 1];
-  const isReasoningStreaming =
-    isLast && isStreaming && lastPart?.type === "reasoning";
-
-  // ── Sub-agent events ─────────────────────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // ── Collect sub-agent events (data-subagent parts) ──────────────────────
   const subAgentEvents = useMemo<SubAgentEvent[]>(() => {
     return parts
       .filter((p) => p.type === "data-subagent")
@@ -280,293 +88,130 @@ export default function ChatMessage({
         durationMs: p.data?.durationMs,
         ts: i,
       }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [parts]);
 
-  // ── Inline questions ──────────────────────────────────────────────────────
+  // ── Inline questions (data-question parts) ──────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const inlineQuestions = useMemo<any[]>(() => {
     return parts.filter((p) => p.type === "data-question").map((p) => p.data);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [parts]);
 
-  // ── Text parts ────────────────────────────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const textParts = parts.filter(
-    (p) => p.type === "text" && typeof p.text === "string"
+  // ── Reasoning (consolidated from all reasoning parts) ────────────────────
+  const reasoningText = useMemo(() => {
+    return parts
+      .filter((p) => p.type === "reasoning" && typeof p.text === "string")
+      .map((p) => p.text)
+      .filter(Boolean)
+      .join("\n\n");
+  }, [parts]);
+
+  // ── Source count (for SourcesTrigger) ────────────────────────────────────
+  const sourceCount = useMemo(() => {
+    return parts.filter(
+      (p) => p.type === "source-url" || p.type === "source-document"
+    ).length;
+  }, [parts]);
+
+  // ── Reasoning streaming check ───────────────────────────────────────────
+  const lastPart = parts[parts.length - 1];
+  const isReasoningStreaming =
+    isLast && isStreaming && lastPart?.type === "reasoning";
+
+  // ── Final answer text (joined text parts) ────────────────────────────────
+  const fullText = useMemo(() => {
+    return parts
+      .filter((p) => p.type === "text" && typeof p.text === "string")
+      .map((p) => p.text || "")
+      .join("");
+  }, [parts]);
+
+  // ── Parse reasoning into steps for ChainOfThought (per e3985a9) ─────────
+  const reasoningSteps = useMemo(
+    () => parseReasoningSteps(reasoningText),
+    [reasoningText]
   );
-  const fullText = textParts.map((p) => p.text).join("");
 
-  // ── Use CoT when there are discrete steps (tools, sub-agents, sources) ────
-  const useCoT = !isUser && hasDiscreteSteps(parts);
-
-  // ── Build CoT steps in EXACT official pattern ─────────────────────────────
-  // Each step = ONE action:
-  //   label   = short description of what the agent is doing
-  //   icon    = SearchIcon / WrenchIcon / BrainIcon / UserIcon
-  //   status  = "complete" | "active"
-  //   children = the OUTPUT of that action (badges / image / tool output)
-  //
-  // Pattern: thinking text + tool call = ONE step (thinking as label, tool as children)
-  // Final answer (text not followed by tool) = LAST step's label
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cotSteps = useMemo<Array<any>>(() => {
-    if (!useCoT) return [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const steps: any[] = [];
-
-    // ── Helpers to build step content ──────────────────────────────────────
-
-    // (Tool details are rendered as sibling <ToolPart> components below,
-    // not inside CoT step children — per commit e3985a9 and the official
-    // Tool pattern at https://elements.ai-sdk.dev/components/tool)
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sourceChildren = (sources: any[]) => (
-      <ChainOfThoughtSearchResults className="mt-1">
-        {sources.map((s, k) => (
-          <ChainOfThoughtSearchResult key={k}>
-            {s.title ?? s.url}
-          </ChainOfThoughtSearchResult>
-        ))}
-      </ChainOfThoughtSearchResults>
-    );
-
-    // ── Main pass: group parts into "action blocks" ─────────────────────────
-    //
-    // An "action block" is: [thinking text] → [tool / source / sub-agent]
-    // If there's no following action, the text IS the final answer.
-
-    let i = 0;
-    while (i < parts.length) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const p: any = parts[i];
-
-      // Skip stream step boundary
-      if (p.type === "step-start") {
-        i++;
-        continue;
-      }
-
-      // Skip data parts — handled by SubAgentActivity / InlineQuestion
-      if (p.type === "data-subagent" || p.type === "data-question") {
-        i++;
-        continue;
-      }
-
-      // Reasoning part → ONE step with full text as label + description
-      if (p.type === "reasoning" && typeof p.text === "string" && p.text) {
-        const isLastStep = i === parts.length - 1;
-        steps.push({
-          key: `reasoning-${i}`,
-          // Auto-detect icon from reasoning text (per f8ad7d7 pattern)
-          icon: iconForText(p.text),
-          label: shortenLabel(p.text),
-          description: p.text.length > 70 ? p.text : undefined,
-          status: isLastStep && isStreaming ? "active" : "complete",
-          children: null,
-        });
-        i++;
-        continue;
-      }
-
-      // Tool part → NOT a CoT step. The tool is rendered as a SIBLING
-      // <ToolPart> component (with official state badge, input, output)
-      // per https://elements.ai-sdk.dev/components/tool — the same pattern
-      // used in commit e3985a9. The "thinking aloud" text BEFORE the tool
-      // (handled by the text branch above) provides the step label in CoT.
-      if (
-        (typeof p.type === "string" && p.type.startsWith("tool-")) ||
-        p.type === "dynamic-tool"
-      ) {
-        // Skip — the tool is rendered by the switch below
-        i++;
-        continue;
-      }
-
-      // Source URLs → ONE step with badges as children
-      if (p.type === "source-url") {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const consecutive: any[] = [];
-        let j = i;
-        while (j < parts.length && parts[j].type === "source-url") {
-          consecutive.push(parts[j]);
-          j++;
-        }
-        const isLastStep = j - 1 === parts.length - 1;
-        // Use previous text/reasoning as label if any
-        const prev = i > 0 ? parts[i - 1] : null;
-        const hasPrevThinking =
-          prev &&
-          ((prev.type === "text" && typeof prev.text === "string") ||
-            prev.type === "reasoning");
-        const label = hasPrevThinking
-          ? shortenLabel(prev.type === "text" ? prev.text : prev.text)
-          : `Found ${consecutive.length} source${consecutive.length === 1 ? "" : "s"}`;
-
-        steps.push({
-          key: `sources-${i}`,
-          icon: SearchIcon,
-          label,
-          description: undefined,
-          status: isLastStep && isStreaming ? "active" : "complete",
-          children: sourceChildren(consecutive),
-        });
-        i = j;
-        continue;
-      }
-
-      // Text part
-      if (p.type === "text" && typeof p.text === "string" && p.text) {
-        // Check if next non-trivial part is an action (tool/source/sub-agent)
-        let nextIdx = i + 1;
-        while (
-          nextIdx < parts.length &&
-          (parts[nextIdx].type === "step-start" ||
-            parts[nextIdx].type === "reasoning")
-        ) {
-          nextIdx++;
-        }
-        const nextPart = parts[nextIdx];
-
-        const isFollowedByAction =
-          nextPart &&
-          ((typeof nextPart.type === "string" &&
-            (nextPart.type.startsWith("tool-") ||
-              nextPart.type === "dynamic-tool")) ||
-            nextPart.type === "data-subagent" ||
-            nextPart.type === "source-url");
-
-        if (isFollowedByAction) {
-          // "Thinking aloud" before an action → SKIP here, the action's
-          // step will use this text as its label.
-          i++;
-          continue;
-        }
-
-        // Final answer → last step, no icon (per official example
-        // step 3: label="Hayden Bleasel is an Australian..." no icon)
-        steps.push({
-          key: `answer-${i}`,
-          icon: undefined, // no icon for final answer
-          label: p.text, // FULL text as label, just like the official example
-          description: undefined,
-          status: isLast && isStreaming ? "active" : "complete",
-          children: null,
-        });
-        i++;
-        continue;
-      }
-
-      i++;
-    }
-
-    return steps;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useCoT, isStreaming, isLast, JSON.stringify(parts)]);
-
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <Message from={message.role}>
       <MessageContent>
-        {/* Sub-agent activity panel */}
+        {/* 1. SubAgentPanel — sub-agent activity (data-subagent parts) */}
         {!isUser && subAgentEvents.length > 0 && (
           <SubAgentActivity events={subAgentEvents} isStreaming={isStreaming} />
         )}
 
-        {/* ── Chain of Thought (EXACT official pattern, with polished header) ─
-            Per https://elements.ai-sdk.dev/components/chain-of-thought
-            Per your commit f8ad7d7 — adds:
-              • BrainIcon in amber in the header
-              • Step counter "3/12"
-              • Active step indicator with title preview
-        */}
-        {!isUser && useCoT && cotSteps.length > 0 && (
-          (() => {
-            const done = cotSteps.filter(
-              (s: { status: string }) => s.status === "complete"
-            ).length;
-            const activeStep = cotSteps.find(
-              (s: { status: string }) => s.status === "active"
-            );
-            return (
-              <ChainOfThought
-                defaultOpen
-                className="mb-3 not-prose"
-              >
-                <ChainOfThoughtHeader>
-                  <span className="inline-flex items-center gap-2">
-                    <BrainIcon className="size-3.5 text-amber-500" />
-                    <span className="text-xs font-medium">Chain of Thought</span>
-                    <span className="text-[10px] text-muted-foreground/60">
-                      {done}/{cotSteps.length}
-                    </span>
-                    {isStreaming && activeStep && (
-                      <span className="inline-flex items-center gap-1 text-[10px] text-amber-500">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        {(activeStep.label ?? "").slice(0, 50)}
-                      </span>
-                    )}
-                  </span>
-                </ChainOfThoughtHeader>
-                <ChainOfThoughtContent>
-                  {cotSteps.map((step) => (
-                    <ChainOfThoughtStep
-                      key={step.key}
-                      icon={step.icon}
-                      label={step.label}
-                      description={step.description}
-                      status={step.status}
-                    >
-                      {step.children}
-                    </ChainOfThoughtStep>
-                  ))}
-                </ChainOfThoughtContent>
-              </ChainOfThought>
-            );
-          })()
+        {/* 2a. ChainOfThought — when reasoning text parses into steps */}
+        {!isUser && reasoningText && reasoningSteps.length > 0 && (
+          <ChainOfThought defaultOpen className="mb-3 not-prose">
+            <ChainOfThoughtHeader>
+              <span className="flex items-center gap-1.5">
+                <BrainIcon className="size-3.5" />
+                Chain of Thought
+              </span>
+            </ChainOfThoughtHeader>
+            <ChainOfThoughtContent>
+              {reasoningSteps.map((step, idx) => (
+                <ChainOfThoughtStep
+                  key={idx}
+                  icon={getStepIcon(step.type)}
+                  label={step.text}
+                  status={
+                    idx === reasoningSteps.length - 1 && isReasoningStreaming
+                      ? "active"
+                      : "complete"
+                  }
+                />
+              ))}
+            </ChainOfThoughtContent>
+          </ChainOfThought>
         )}
 
-        {/* ── Reasoning (single continuous block, per official docs) ─────────
-            Per https://elements.ai-sdk.dev/components/reasoning:
-            "If your model outputs discrete, labeled steps (search queries,
-             tool calls, distinct thought stages), consider using the
-             Chain of Thought component instead."
-            So we use Reasoning ONLY when there are no discrete steps.
-        */}
-        {!isUser && !useCoT && hasReasoning && (
+        {/* 2b. Reasoning fallback — when reasoning text is one continuous block */}
+        {!isUser && reasoningText && reasoningSteps.length === 0 && (
           <Reasoning className="w-full" isStreaming={isReasoningStreaming}>
             <ReasoningTrigger />
             <ReasoningContent>{reasoningText}</ReasoningContent>
           </Reasoning>
         )}
 
-        {/* ── Sources (per official Sources pattern, only when NOT using CoT) ──
-            https://elements.ai-sdk.dev/components/sources
-            When CoT is active, sources are inside CoT step children.
-        */}
-        {!isUser &&
-          !useCoT &&
-          (() => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const sourceParts = (parts as any[]).filter(
-              (p) => p.type === "source-url"
-            );
-            if (sourceParts.length === 0) return null;
-            return (
-              <Sources>
-                <SourcesTrigger count={sourceParts.length} />
-                {sourceParts.map((sp, i) => (
-                  <SourcesContent key={`src-${i}`}>
-                    <Source href={sp.url} title={sp.title ?? sp.url} />
+        {/* 3. Sources — sibling block, one Sources wrapper for all citations */}
+        {!isUser && sourceCount > 0 && (
+          <Sources>
+            <SourcesTrigger count={sourceCount} />
+            {parts.map((part, i) => {
+              if (part.type === "source-url") {
+                return (
+                  <SourcesContent key={`src-${message.id}-${i}`}>
+                    <Source
+                      key={`s-${message.id}-${i}`}
+                      href={part.url}
+                      title={part.title ?? part.url}
+                    />
                   </SourcesContent>
-                ))}
-              </Sources>
-            );
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          })()}
+                );
+              }
+              return null;
+            })}
+          </Sources>
+        )}
 
-        {/* ── Inline questions ─────────────────────────────────────────────── */}
+        {/* 4. Tool calls — each rendered as separate official <ToolPart> */}
+        {!isUser &&
+          parts.map((part, i) => {
+            if (
+              typeof part.type === "string" &&
+              part.type.startsWith("tool-")
+            ) {
+              return (
+                <ToolPart
+                  key={`tool-${message.id}-${i}`}
+                  part={part}
+                />
+              );
+            }
+            return null;
+          })}
+
+        {/* 5. Inline questions (askUser) */}
         {!isUser &&
           inlineQuestions.map((q) => (
             <InlineQuestion
@@ -591,99 +236,21 @@ export default function ChatMessage({
             />
           ))}
 
-        {/* ── Official `switch (part.type)` pattern (per Chatbot example) ──────
-            Per https://elements.ai-sdk.dev/examples/chatbot:
-              "We switch on message.parts and render the respective
-               part within Message, Reasoning, and Sources."
-
-            Architecture (matches commit e3985a9 + elements.ai-sdk.dev docs):
-            - ChainOfThought block (above) handles reasoning + thinking text
-            - <ToolPart> (in this switch) handles tool invocations as
-              SIBLINGS with the official Tool/ToolHeader/ToolContent
-              pattern, including a state badge (Running/Completed/Error)
-            - <Sources> (in this switch) handles citations
-            - <MessageResponse> (in this switch) handles final text
-
-            For CoT messages:
-            - reasoning parts: skipped (in CoT)
-            - "thinking aloud" text: skipped (in CoT as step label)
-            - source-url: skipped (rendered as search result badges in CoT)
-            - tool-*: RENDERED as <ToolPart> (sibling with state badge)
-            - final text: RENDERED as <MessageResponse>
-        */}
+        {/* 6. Text — final answer rendered with custom MarkdownText
+            (reliable, no Streamdown failure modes — see markdown-text.tsx) */}
         {parts.map((part, i) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const p: any = part;
-          switch (p.type) {
-            case "text": {
-              if (!p.text) return null;
-              // Skip "thinking aloud" text (followed by tool/sub-agent/source)
-              // when CoT is active — it's already a CoT step label
-              if (useCoT) {
-                let nextIdx = i + 1;
-                while (
-                  nextIdx < parts.length &&
-                  (parts[nextIdx].type === "step-start" ||
-                    parts[nextIdx].type === "reasoning")
-                ) {
-                  nextIdx++;
-                }
-                const nextPart = parts[nextIdx];
-                const isFollowedByAction =
-                  nextPart &&
-                  ((typeof nextPart.type === "string" &&
-                    (nextPart.type.startsWith("tool-") ||
-                      nextPart.type === "dynamic-tool")) ||
-                    nextPart.type === "data-subagent" ||
-                    nextPart.type === "source-url");
-                if (isFollowedByAction) return null;
-              }
-              return (
-                <MarkdownText key={`text-${message.id}-${i}`} text={p.text} />
-              );
-            }
-
-            // Reasoning handled by Reasoning/ChainOfThought block above
-            case "reasoning":
-              return null;
-
-            // Sources: when CoT active, rendered as search result badges
-            // inside CoT step children; when no CoT, render as <Sources> block
-            case "source-url": {
-              if (useCoT) return null;
-              return (
-                <Sources key={`src-${message.id}-${i}`}>
-                  <SourcesTrigger count={1} />
-                  <SourcesContent>
-                    <Source href={p.url} title={p.title ?? p.url} />
-                  </SourcesContent>
-                </Sources>
-              );
-            }
-
-            // Tool invocations: always render as <ToolPart> sibling
-            // (official Tool pattern with state badge, input, output)
-            default: {
-              if (
-                (typeof p.type === "string" && p.type.startsWith("tool-")) ||
-                p.type === "dynamic-tool"
-              ) {
-                return (
-                  <ToolPart key={`tool-${message.id}-${i}`} part={p} />
-                );
-              }
-              // Skip data parts (handled by SubAgentActivity / InlineQuestion)
-              if (p.type === "data-subagent" || p.type === "data-question") {
-                return null;
-              }
-              // Stream step boundary — no UI
-              if (p.type === "step-start") return null;
-              return null;
-            }
+          if (part.type === "text" && typeof part.text === "string") {
+            if (!part.text) return null;
+            return (
+              <div key={`text-${message.id}-${i}`} className="text-sm">
+                <MarkdownText text={part.text} />
+              </div>
+            );
           }
+          return null;
         })}
 
-        {/* Action bar */}
+        {/* 7. Action bar (regenerate + copy) */}
         {!isUser && !isStreaming && fullText && onRegenerate && (
           <MessageActionBar
             messageId={message.id}
@@ -691,7 +258,98 @@ export default function ChatMessage({
             onRegenerate={onRegenerate}
           />
         )}
+
+        {/* Thinking shimmer while user waits for AI first chunk */}
+        {isUser && isLast && isStreaming && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Shimmer duration={1.2}>Thinking…</Shimmer>
+          </div>
+        )}
       </MessageContent>
     </Message>
   );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// parseReasoningSteps — converts reasoning text into structured steps
+// for ChainOfThought visualization (per e3985a9 pattern)
+//
+// Pattern recognition:
+//   - "Step 1:" / "1." / "1)" → new step
+//   - "**Search**" or "searching" → search step
+//   - "**Analysis**" or "analyzing" → analysis step
+//   - "**Tool**" or "executing" or "tool call" → tool step
+//   - other text → append to current step
+// ────────────────────────────────────────────────────────────────────────
+function parseReasoningSteps(
+  text: string
+): Array<{ type: string; text: string }> {
+  if (!text) return [];
+
+  const steps: Array<{ type: string; text: string }> = [];
+  const lines = text.split("\n");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let currentStep: { type: string; text: string } = { type: "thinking", text: "" };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Step number: "Step 1:" or "1." or "1)"
+    if (
+      trimmed.match(/^(Step \d+[:.]|Step \d+)/i) ||
+      trimmed.match(/^\d+[\.\)]\s/)
+    ) {
+      if (currentStep.text) steps.push(currentStep);
+      const type = detectStepType(trimmed);
+      currentStep = { type, text: trimmed };
+    } else if (trimmed.match(/search(ing|ed)?/i)) {
+      if (currentStep.text) steps.push(currentStep);
+      currentStep = { type: "search", text: trimmed };
+    } else if (trimmed.match(/analyz(e|ing)/i)) {
+      if (currentStep.text) steps.push(currentStep);
+      currentStep = { type: "analysis", text: trimmed };
+    } else if (trimmed.match(/execut(e|ing|ion)|tool call/i)) {
+      if (currentStep.text) steps.push(currentStep);
+      currentStep = { type: "tool", text: trimmed };
+    } else if (currentStep.text) {
+      currentStep.text += " " + trimmed;
+    } else {
+      currentStep.text = trimmed;
+    }
+  }
+
+  if (currentStep.text) steps.push(currentStep);
+  if (steps.length === 0 && text) {
+    steps.push({ type: "thinking", text: text.slice(0, 500) });
+  }
+  return steps;
+}
+
+function detectStepType(text: string): string {
+  const lower = text.toLowerCase();
+  if (lower.includes("search") || lower.includes("finding")) return "search";
+  if (lower.includes("analyz") || lower.includes("consider")) return "analysis";
+  if (lower.includes("tool") || lower.includes("execut") || lower.includes("call"))
+    return "tool";
+  if (
+    lower.includes("generat") ||
+    lower.includes("creat") ||
+    lower.includes("synthes")
+  )
+    return "synthesis";
+  if (lower.includes("verif") || lower.includes("check") || lower.includes("confirm"))
+    return "verification";
+  return "thinking";
+}
+
+function getStepIcon(type: string) {
+  switch (type) {
+    case "search":
+      return SearchIcon;
+    case "tool":
+      return FileTextIcon;
+    default:
+      return BrainIcon;
+  }
 }
