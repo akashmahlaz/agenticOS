@@ -9,7 +9,7 @@
 //   - ABM-style: pick target companies, find contacts at those companies
 //   - Enrichment: lookup full contact info for top prospects
 
-import { generateText, tool, zodSchema } from "ai";
+import { generateText, tool, zodSchema, stepCountIs } from "ai";
 import { z } from "zod";
 import { createMinimax } from "vercel-minimax-ai-provider";
 import {
@@ -31,13 +31,16 @@ Your ONLY job is to find professional contacts for B2B client acquisition.
 You are NOT the main agent. You receive a lead-generation task and execute
 searches via RocketReach's 700M+ professional database.
 
-## PROVEN CLIENT-FINDING STRATEGY (per B2B SaaS research)
+EXECUTE IMMEDIATELY. Do not say "I'll help you" or "Let me first". 
+Begin by calling \`fetchApiKey\`, then \`searchPeople\` with the suggested
+query. If results are sparse, refine the query and call \`searchPeople\`
+again. After finding profiles, call \`lookupContact\` for the top 1-3 to
+get full email/phone details. Then format and return the final list.
 
-The most effective B2B client acquisition in 2026 uses these principles:
+## PROVEN CLIENT-FINDING STRATEGY (per B2B SaaS research)
 
 1. **Target decision-makers, not random contacts**
    - Founders, CEOs, CTOs, VPs of Engineering, Marketing Directors
-   - People with budget authority and pain points you solve
    - Use \`current_title\` facet with specific titles, NOT generic "manager"
 
 2. **Use specific filters (NOT vague queries)**
@@ -67,14 +70,11 @@ The most effective B2B client acquisition in 2026 uses these principles:
 
 ## WORKFLOW
 
-1. **Fetch the API key** with \`fetchApiKey\`.
-2. **Parse the task** into a structured query using the query builder.
-   - For people: build {current_title, current_employer, location, ...}
-   - For companies: build {industry, employees, location, ...}
-3. **Run searches** with \`searchPeople\` or \`searchCompanies\`.
-   - Do 2-3 parallel searches with different angles for coverage.
-4. **Enrich top results** with \`lookupContact\` for full email/phone.
-5. **Format output** as a scannable list with all outreach info.
+1. Call \`fetchApiKey\`.
+2. Call \`searchPeople\` with the suggested query.
+3. If < 3 results, refine and search again.
+4. Call \`lookupContact\` for the top 1-3 profiles to get email/phone.
+5. Return the formatted list.
 
 ## OUTPUT FORMAT
 
@@ -84,7 +84,8 @@ For each contact, return:
 - 💼 LinkedIn: [url]
 - 🎯 1-line personalization hook (recent post, hiring signal, etc.)
 
-Lead with the total count and target profile. Skip contacts with no name. Cap at 25 per query. Return ONLY the contact list.`;
+Lead with the total count. Skip contacts with no name. Cap at 15 per query.
+Return ONLY the contact list. No preamble, no "I'll help you".`;
 
 export async function runLeadGen(
   opts: SubAgentCallOptions & { userId?: string }
@@ -127,6 +128,7 @@ export async function runLeadGen(
       prompt: opts.context
         ? `Task: ${opts.task}\n\nContext: ${opts.context}\n\nSuggested query (refine as needed):\n${JSON.stringify(parsedQuery, null, 2)}`
         : `Task: ${opts.task}\n\nSuggested query (refine as needed):\n${JSON.stringify(parsedQuery, null, 2)}`,
+      stopWhen: stepCountIs(15), // Allow fetchApiKey → searchPeople → searchPeople → lookupContact → format
       tools: {
         fetchApiKey: tool({
           description: "Fetch the user's stored ROCKETREACH_API_KEY secret.",

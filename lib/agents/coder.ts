@@ -3,7 +3,7 @@
 // Returns: code blocks with explanations
 
 import { createMinimax } from "vercel-minimax-ai-provider";
-import { generateText, tool, zodSchema } from "ai";
+import { generateText, tool, zodSchema, stepCountIs } from "ai";
 import { z } from "zod";
 import type { SubAgentCallOptions, SubAgentResult } from "./types";
 
@@ -56,6 +56,7 @@ export async function runCoder(
       prompt: opts.context
         ? `Task: ${opts.task}\n\nContext: ${opts.context}`
         : `Task: ${opts.task}`,
+      stopWhen: stepCountIs(15), // Allow up to 15 tool-call steps
       tools: {
         runSnippet: tool({
           description: "Run a small code snippet in a sandboxed JS environment.",

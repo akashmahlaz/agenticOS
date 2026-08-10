@@ -3,7 +3,7 @@
 // Tools: search_web, browse_website, extract_links
 
 import { createMinimax } from "vercel-minimax-ai-provider";
-import { generateText, tool, zodSchema } from "ai";
+import { generateText, tool, zodSchema, stepCountIs } from "ai";
 import { z } from "zod";
 import type { SubAgentCallOptions, SubAgentResult } from "./types";
 import { browseWebsite, searchWeb } from "@/lib/browser/playwright";
@@ -60,6 +60,7 @@ export async function runBrowser(
       prompt: opts.context
         ? `Task: ${opts.task}\n\nContext: ${opts.context}`
         : `Task: ${opts.task}`,
+      stopWhen: stepCountIs(15), // Allow up to 15 tool-call steps
       tools: {
         search_web: tool({
           description:

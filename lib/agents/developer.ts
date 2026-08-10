@@ -2,7 +2,7 @@
 // Uses the user's stored GITHUB_TOKEN secret.
 // Can list repos, read files, search code, create issues, etc.
 
-import { generateText, tool, zodSchema } from "ai";
+import { generateText, tool, zodSchema, stepCountIs } from "ai";
 import { z } from "zod";
 import { createMinimax } from "vercel-minimax-ai-provider";
 import { createGitHub } from "@/lib/integrations/github";
@@ -64,6 +64,7 @@ export async function runDeveloper(
       prompt: opts.context
         ? `Task: ${opts.task}\n\nContext: ${opts.context}`
         : `Task: ${opts.task}`,
+      stopWhen: stepCountIs(15), // Allow up to 15 tool-call steps
       tools: {
         fetchApiKey: tool({
           description: "Fetch the user's stored GITHUB_TOKEN secret.",

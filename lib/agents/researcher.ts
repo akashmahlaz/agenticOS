@@ -3,7 +3,7 @@
 // Returns a synthesized answer with source citations
 
 import { createMinimax } from "vercel-minimax-ai-provider";
-import { generateText, tool, zodSchema } from "ai";
+import { generateText, tool, zodSchema, stepCountIs } from "ai";
 import { z } from "zod";
 import type { SubAgentCallOptions, SubAgentResult } from "./types";
 
@@ -55,6 +55,7 @@ export async function runResearcher(
       prompt: opts.context
         ? `Task: ${opts.task}\n\nAdditional context: ${opts.context}`
         : `Task: ${opts.task}`,
+      stopWhen: stepCountIs(15), // Allow up to 15 tool-call steps
       tools: {
         webSearch: tool({
           description: "Search the web for multiple results on a topic.",

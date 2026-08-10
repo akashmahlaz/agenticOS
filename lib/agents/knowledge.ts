@@ -2,7 +2,7 @@
 // Adds documents, searches the knowledge base, retrieves relevant context
 
 import { createMinimax } from "vercel-minimax-ai-provider";
-import { generateText, tool, zodSchema } from "ai";
+import { generateText, tool, zodSchema, stepCountIs } from "ai";
 import { z } from "zod";
 import type { SubAgentCallOptions, SubAgentResult } from "./types";
 import {
@@ -78,6 +78,7 @@ export async function runKnowledge(
       prompt: opts.context
         ? `Task: ${opts.task}\n\nContext: ${opts.context}`
         : `Task: ${opts.task}`,
+      stopWhen: stepCountIs(15), // Allow up to 15 tool-call steps
       tools: {
         add_document: tool({
           description: "Add a new document to the user's knowledge base.",
