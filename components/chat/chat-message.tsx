@@ -70,8 +70,8 @@ import {
   ChainOfThoughtSearchResult,
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
-import { CodeBlock } from "@/components/ai-elements/code-block";
 import SubAgentActivity, { type SubAgentEvent } from "./subagent-activity";
+import ToolPart from "./message-parts/tool-part";
 import InlineQuestion from "./inline-question";
 import MessageActionBar from "./message-action-bar";
 import {
@@ -317,40 +317,9 @@ export default function ChatMessage({
 
     // ── Helpers to build step content ──────────────────────────────────────
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const toolChildren = (p: any) => {
-      const toolName = p.toolName ?? p.type.replace(/^tool-/, "");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const input: any = p.input;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const output: any = p.output;
-      return (
-        <div className="mt-1 space-y-2 text-xs">
-          {input != null && (
-            <div>
-              <div className="text-muted-foreground mb-1">Input</div>
-              <CodeBlock
-                code={JSON.stringify(input, null, 2)}
-                language="json"
-              />
-            </div>
-          )}
-          {output != null && (
-            <div>
-              <div className="text-muted-foreground mb-1">Output</div>
-              {typeof output === "string" ? (
-                <MessageResponse>{output}</MessageResponse>
-              ) : (
-                <CodeBlock
-                  code={JSON.stringify(output, null, 2)}
-                  language="json"
-                />
-              )}
-            </div>
-          )}
-        </div>
-      );
-    };
+    // (Tool details are rendered as sibling <ToolPart> components below,
+    // not inside CoT step children — per commit e3985a9 and the official
+    // Tool pattern at https://elements.ai-sdk.dev/components/tool)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const subagentChildren = (p: any) => {
@@ -427,41 +396,16 @@ export default function ChatMessage({
         continue;
       }
 
-      // Tool part → ONE step
+      // Tool part → NOT a CoT step. The tool is rendered as a SIBLING
+      // <ToolPart> component (with official state badge, input, output)
+      // per https://elements.ai-sdk.dev/components/tool — the same pattern
+      // used in commit e3985a9. The "thinking aloud" text BEFORE the tool
+      // (handled by the text branch above) provides the step label in CoT.
       if (
         (typeof p.type === "string" && p.type.startsWith("tool-")) ||
         p.type === "dynamic-tool"
       ) {
-        const toolName = p.toolName ?? p.type.replace(/^tool-/, "");
-        // Check if previous part was a text/reasoning "thinking" part
-        const prev = i > 0 ? parts[i - 1] : null;
-        const hasPrevThinking =
-          prev &&
-          ((prev.type === "text" && typeof prev.text === "string") ||
-            prev.type === "reasoning");
-        const thinkingText =
-          hasPrevThinking && prev.type === "text" ? prev.text : null;
-        const thinkingReason =
-          hasPrevThinking && prev.type === "reasoning" ? prev.text : null;
-
-        const isLastStep = i === parts.length - 1;
-        const label = thinkingText
-          ? shortenLabel(thinkingText)
-          : thinkingReason
-            ? shortenLabel(thinkingReason)
-            : `Calling ${toolName}`;
-
-        steps.push({
-          key: `tool-${i}-${p.toolCallId ?? i}`,
-          // Icon from tool name (per f8ad7d7 pattern):
-          //   delegateToBrowser → GlobeIcon, fetchUrl → GlobeIcon,
-          //   webSearch → SearchIcon, calc → CalculatorIcon, etc.
-          icon: iconForToolName(toolName),
-          label,
-          description: undefined,
-          status: isLastStep && isStreaming ? "active" : "complete",
-          children: toolChildren(p),
-        });
+        // Skip — the tool is rendered by the switch below
         i++;
         continue;
       }
@@ -677,44 +621,93 @@ export default function ChatMessage({
             Per https://elements.ai-sdk.dev/examples/chatbot:
               "We switch on message.parts and render the respective
                part within Message, Reasoning, and Sources."
-            For CoT messages, ALL parts are absorbed into CoT steps above,
-            so this switch only renders content for non-CoT messages.
+
+            Architecture (matches commit e3985a9 + elements.ai-sdk.dev docs):
+            - ChainOfThought block (above) handles reasoning + thinking text
+            - <ToolPart> (in this switch) handles tool invocations as
+              SIBLINGS with the official Tool/ToolHeader/ToolContent
+              pattern, including a state badge (Running/Completed/Error)
+            - <Sources> (in this switch) handles citations
+            - <MessageResponse> (in this switch) handles final text
+
+            For CoT messages:
+            - reasoning parts: skipped (in CoT)
+            - "thinking aloud" text: skipped (in CoT as step label)
+            - source-url: skipped (rendered as search result badges in CoT)
+            - tool-*: RENDERED as <ToolPart> (sibling with state badge)
+            - final text: RENDERED as <MessageResponse>
         */}
         {parts.map((part, i) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const p: any = part;
-
-          // For CoT messages, everything is handled in the CoT block above
-          if (useCoT) return null;
-
           switch (p.type) {
-            case "text":
+            case "text": {
               if (!p.text) return null;
+              // Skip "thinking aloud" text (followed by tool/sub-agent/source)
+              // when CoT is active — it's already a CoT step label
+              if (useCoT) {
+                let nextIdx = i + 1;
+                while (
+                  nextIdx < parts.length &&
+                  (parts[nextIdx].type === "step-start" ||
+                    parts[nextIdx].type === "reasoning")
+                ) {
+                  nextIdx++;
+                }
+                const nextPart = parts[nextIdx];
+                const isFollowedByAction =
+                  nextPart &&
+                  ((typeof nextPart.type === "string" &&
+                    (nextPart.type.startsWith("tool-") ||
+                      nextPart.type === "dynamic-tool")) ||
+                    nextPart.type === "data-subagent" ||
+                    nextPart.type === "source-url");
+                if (isFollowedByAction) return null;
+              }
               return (
                 <MessageResponse key={`text-${message.id}-${i}`}>
                   {p.text}
                 </MessageResponse>
               );
+            }
 
-            // Reasoning handled by Reasoning component above
+            // Reasoning handled by Reasoning/ChainOfThought block above
             case "reasoning":
               return null;
 
-            // Sources handled by Sources component above
-            case "source-url":
-              return null;
+            // Sources: when CoT active, rendered as search result badges
+            // inside CoT step children; when no CoT, render as <Sources> block
+            case "source-url": {
+              if (useCoT) return null;
+              return (
+                <Sources key={`src-${message.id}-${i}`}>
+                  <SourcesTrigger count={1} />
+                  <SourcesContent>
+                    <Source href={p.url} title={p.title ?? p.url} />
+                  </SourcesContent>
+                </Sources>
+              );
+            }
 
-            // Inline data handled by SubAgentActivity / InlineQuestion
-            case "data-subagent":
-            case "data-question":
+            // Tool invocations: always render as <ToolPart> sibling
+            // (official Tool pattern with state badge, input, output)
+            default: {
+              if (
+                (typeof p.type === "string" && p.type.startsWith("tool-")) ||
+                p.type === "dynamic-tool"
+              ) {
+                return (
+                  <ToolPart key={`tool-${message.id}-${i}`} part={p} />
+                );
+              }
+              // Skip data parts (handled by SubAgentActivity / InlineQuestion)
+              if (p.type === "data-subagent" || p.type === "data-question") {
+                return null;
+              }
+              // Stream step boundary — no UI
+              if (p.type === "step-start") return null;
               return null;
-
-            // Stream step boundary — no UI
-            case "step-start":
-              return null;
-
-            default:
-              return null;
+            }
           }
         })}
 
