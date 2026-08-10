@@ -11,6 +11,7 @@ import { runKnowledge } from "./knowledge";
 import { runOperator } from "./operator";
 import { runLeadGen } from "./leadgen";
 import { runDeveloper } from "./developer";
+import { runBusinessStrategist } from "./business-strategist";
 import type { SubAgentId } from "./types";
 
 // Re-export sub-agent runners
@@ -22,6 +23,7 @@ export { runKnowledge } from "./knowledge";
 export { runOperator } from "./operator";
 export { runLeadGen } from "./leadgen";
 export { runDeveloper } from "./developer";
+export { runBusinessStrategist } from "./business-strategist";
 
 // Progress event type — matches the existing chat-container event types
 export interface SubAgentProgressEvent {
@@ -505,6 +507,59 @@ export const subAgentTools: any = {
       });
       return {
         agent: "developer",
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        durationMs: result.durationMs,
+      };
+    },
+  }),
+
+  // ─── Business Strategist ───
+  // Owns the 7-strategy client-acquisition playbook (Reddit warm, cold email,
+  // signal-based, build-in-public, AI agency, voice agents, cold call).
+  // Produces actual deliverables: ICPs, email sequences, pricing tiers, etc.
+  delegateToBusinessStrategist: tool({
+    description:
+      "Delegate a business strategy / client-acquisition / revenue question to the Business Strategist sub-agent. Use this when the user wants help with: building an ICP, crafting a cold email, designing a Grand Slam Offer (Hormozi), creating 3-tier pricing, building a 30-day launch plan, finding buying signals, or any of the 7 proven client-acquisition strategies (Reddit warm outreach, cold email, signal-based outbound, build-in-public, AI agency, voice agents, cold call). The strategist can also do market research via webSearch. Examples: 'help me find clients for my AI agency', 'build a 30-day plan to get my first 5 customers', 'craft a cold email sequence for SaaS CTOs', 'price my consulting offer'.",
+    inputSchema: zodSchema(
+      z.object({
+        task: z.string().describe("The strategy or business question"),
+        context: z.string().optional().describe("Additional context: product, ICP, current stage, budget"),
+      })
+    ),
+    execute: async (input: { task: string; context?: string }) => {
+      emit({
+        type: "subagent",
+        agent: "business-strategist" as any,
+        task: input.task,
+        status: "started",
+        message: `Business Strategist engaged: ${input.task}`,
+      });
+      const result = await runBusinessStrategist({
+        task: input.task,
+        context: input.context,
+        onProgress: (p) =>
+          emit({
+            type: "subagent",
+            agent: "business-strategist" as any,
+            task: input.task,
+            status: p.type,
+            message: p.message,
+            toolName: p.toolName,
+          }),
+      });
+      emit({
+        type: "subagent",
+        agent: "business-strategist" as any,
+        task: input.task,
+        status: result.success ? "done" : "error",
+        message: result.success ? "Strategy plan delivered" : `Error: ${result.error}`,
+        result: result.output,
+        durationMs: result.durationMs,
+      });
+      return {
+        agent: "business-strategist",
         success: result.success,
         output: result.output,
         error: result.error,

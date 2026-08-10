@@ -5,6 +5,7 @@ import { tool, zodSchema, type Tool } from "ai";
 import { z } from "zod";
 import { subAgentTools } from "@/lib/agents/orchestrator";
 import { searchWeb } from "@/lib/browser/playwright";
+import { businessTools } from "./business-tools";
 
 // ─── Quick utility tools (always available to the main agent) ─────────
 
@@ -110,5 +111,6 @@ export const allTools: Record<string, Tool> = {
   calculate: calculateTool,
   fetchUrl: fetchUrlTool,
   webSearch: webSearchTool,
+  ...businessTools,
   ...subAgentToolMap,
 };

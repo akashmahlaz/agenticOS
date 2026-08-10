@@ -12,7 +12,8 @@ export type SubAgentId =
   | "operator"
   | "personalization"
   | "leadgen"
-  | "developer";
+  | "developer"
+  | "business-strategist";
 
 export interface SubAgentResult {
   agent: SubAgentId;

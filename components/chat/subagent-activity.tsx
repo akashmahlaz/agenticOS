@@ -21,6 +21,7 @@ import {
   BriefcaseIcon,
   GitBranchIcon,
   UsersIcon,
+  LightbulbIcon,
 } from "lucide-react";
 
 export interface SubAgentEvent {
@@ -35,7 +36,8 @@ export interface SubAgentEvent {
     | "operator"
     | "personalization"
     | "leadgen"
-    | "developer";
+    | "developer"
+    | "business-strategist";
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
   message: string;
@@ -114,6 +116,12 @@ const AGENT_META: Record<
     icon: GitBranchIcon,
     color: "text-coral",
     bg: "bg-coral/10 border-coral/20",
+  },
+  "business-strategist": {
+    name: "Business Strategist",
+    icon: LightbulbIcon,
+    color: "text-warning",
+    bg: "bg-warning/10 border-warning/20",
   },
 };
 
