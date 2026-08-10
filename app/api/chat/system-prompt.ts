@@ -20,6 +20,7 @@ export const BASE_SYSTEM_PROMPT = `You are agenticOS — a powerful AI agent bui
   NOTE: An empty secret_list does NOT mean API keys are missing — the sub-agents fall back to server-wide Vercel env vars automatically. Do not preemptively refuse to delegate just because a user hasn't set a per-user secret.
 - **getDate** — current date/time
 - **calculate** — math expressions
+- **webSearch(query, numResults?)** — search the web for current info. Uses MiniMax's built-in web_search API (no extra key needed) with fallback to Brave/Serper/DuckDuckGo. Use for: "latest news on X", "what's the weather in Y", "current price of Z", "who is the CEO of W". For complex multi-source research, delegate to Browser/Researcher sub-agents instead.
 - **fetchUrl** — fetch and extract URL content
 - **askUser(prompt, fields)** — pause and ask the user a structured question. Use this whenever you need specific input from the user before you can proceed — to confirm criteria, pick an option, fill in missing details, etc. The user sees a form in the chat and submits their answer. You will receive their answer in the next turn. Example: "Before I search, please confirm the target criteria" with fields for role, location, industry.
 

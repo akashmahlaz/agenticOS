@@ -139,13 +139,22 @@ async function browseViaApi(opts: BrowseOptions): Promise<BrowseResult> {
   return { ...data, method: "lightpanda" };
 }
 
-// ──────────────────────────────────────────────
-// Web search — uses Brave Search API if BRAVE_API_KEY is set,
-// falls back to Serper (Google) if SERPER_API_KEY is set,
-// falls back to DuckDuckGo (often blocked on serverless, so unreliable),
-// and finally returns an error if all fail.
+// ────────────────────────────────────────────────────────────────────────
+// Web search — tries multiple backends in order:
+//   1. MiniMax Token Plan web_search (built-in, uses MINIMAX_API_KEY) ⭐
+//   2. Brave Search API (if BRAVE_API_KEY set)
+//   3. Serper (Google) (if SERPER_API_KEY set)
+//   4. DuckDuckGo HTML (often blocked on serverless, unreliable)
 //
-// Users can add keys via /setup (Vercel env) or /secrets (per-user).
+// MiniMax's built-in web_search is the preferred default because:
+//   - No extra API key needed (uses existing MINIMAX_API_KEY)
+//   - Works serverless (no IP blocking)
+//   - Returns structured results (title, link, snippet, date)
+//   - Endpoints: https://api.minimax.io/v1/coding_plan/search
+//
+// Reference: https://platform.minimax.io/docs/token-plan/mcp-guide
+// Users can add Brave/Serper keys via /setup (Vercel env) or /secrets (per-user).
+// ────────────────────────────────────────────────────────────────────────
 
 export interface SearchResult {
   query: string;
@@ -154,7 +163,7 @@ export interface SearchResult {
     url: string;
     snippet: string;
   }>;
-  source: "brave" | "serper" | "duckduckgo" | "google" | "bing";
+  source: "brave" | "serper" | "duckduckgo" | "google" | "bing" | "minimax";
   /** If non-null, all backends failed and this explains why + how to fix. */
   error?: string;
 }
@@ -162,12 +171,31 @@ export interface SearchResult {
 /**
  * Search the web. Tries multiple backends in order.
  * Returns the first non-empty result set.
+ *
+ * Order:
+ *   1. MiniMax Token Plan web_search (uses MINIMAX_API_KEY, works out-of-box)
+ *   2. Brave Search API (if BRAVE_API_KEY set)
+ *   3. Serper (Google) (if SERPER_API_KEY set)
+ *   4. DuckDuckGo HTML (often blocked on serverless, unreliable)
  */
 export async function searchWeb(
   query: string,
   numResults: number = 5
 ): Promise<SearchResult> {
-  // 1. Try Brave Search API (best for privacy + works serverless)
+  // 1. Try MiniMax Token Plan web_search FIRST — uses existing MINIMAX_API_KEY
+  //    so search works out-of-the-box with no extra configuration.
+  //    Per https://platform.minimax.io/docs/token-plan/mcp-guide
+  const minimaxKey = process.env.MINIMAX_API_KEY;
+  if (minimaxKey) {
+    try {
+      const result = await searchMiniMax(query, numResults, minimaxKey);
+      if (result.results.length > 0) return result;
+    } catch (err) {
+      console.error("[search] MiniMax failed:", err);
+    }
+  }
+
+  // 2. Try Brave Search API (best for privacy + works serverless)
   const braveKey = process.env.BRAVE_API_KEY;
   if (braveKey) {
     try {
@@ -178,7 +206,7 @@ export async function searchWeb(
     }
   }
 
-  // 2. Try Serper (Google results via API, fast and reliable)
+  // 3. Try Serper (Google results via API, fast and reliable)
   const serperKey = process.env.SERPER_API_KEY;
   if (serperKey) {
     try {
@@ -189,7 +217,7 @@ export async function searchWeb(
     }
   }
 
-  // 3. Try DuckDuckGo as a last resort (often blocked on serverless)
+  // 4. Try DuckDuckGo as a last resort (often blocked on serverless)
   try {
     const result = await searchDuckDuckGo(query, numResults);
     if (result.results.length > 0) return result;
@@ -197,15 +225,85 @@ export async function searchWeb(
     console.error("[search] DuckDuckGo failed:", err);
   }
 
-  // 4. All backends failed (or returned empty)
-  const hasKey = !!(braveKey || serperKey);
+  // 5. All backends failed (or returned empty)
+  const hasKey = !!(minimaxKey || braveKey || serperKey);
   return {
     query,
     results: [],
-    source: braveKey ? "brave" : serperKey ? "serper" : "duckduckgo",
+    source: minimaxKey
+      ? "minimax"
+      : braveKey
+        ? "brave"
+        : serperKey
+          ? "serper"
+          : "duckduckgo",
     error: hasKey
       ? "All search backends returned no results. The query may be too specific or the service may be temporarily down."
-      : "No search API key configured. Add BRAVE_API_KEY or SERPER_API_KEY via /setup (Vercel env) or /secrets (per-user). DuckDuckGo's HTML endpoint is blocked from serverless IPs and cannot be used as a fallback.",
+      : "No search API key configured. Add MINIMAX_API_KEY, BRAVE_API_KEY, or SERPER_API_KEY via /setup (Vercel env) or /secrets (per-user). DuckDuckGo's HTML endpoint is blocked from serverless IPs and cannot be used as a fallback.",
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// MiniMax Token Plan web_search
+// https://platform.minimax.io/docs/token-plan/mcp-guide
+//
+// POST https://api.minimax.io/v1/coding_plan/search
+// Authorization: Bearer <MINIMAX_API_KEY>
+// Body: { "q": "query", "num": 5 }   (NOT "query" + "count" — those are 400)
+//
+// Response: { organic: [{ title, link, snippet, date }], ... }
+// ────────────────────────────────────────────────────────────────────────
+
+async function searchMiniMax(
+  query: string,
+  numResults: number,
+  apiKey: string
+): Promise<SearchResult> {
+  const url = "https://api.minimax.io/v1/coding_plan/search";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      q: query, // ⚠️ MiniMax uses 'q', NOT 'query' (verified 2026-08-10)
+      num: Math.min(Math.max(1, numResults), 10), // 1-10
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`MiniMax returned ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as {
+    organic?: Array<{ title?: string; link?: string; snippet?: string; date?: string }>;
+    base_resp?: { status_code?: number; status_msg?: string };
+  };
+
+  // Check for MiniMax's base_resp error
+  if (data.base_resp?.status_code && data.base_resp.status_code !== 0) {
+    throw new Error(
+      `MiniMax error ${data.base_resp.status_code}: ${data.base_resp.status_msg}`
+    );
+  }
+
+  const results = (data.organic || [])
+    .filter((r) => r.title && r.link)
+    .slice(0, numResults)
+    .map((r) => ({
+      title: r.title || "",
+      url: r.link || "",
+      snippet: r.snippet || "",
+      date: r.date,
+    }));
+
+  return {
+    query,
+    results,
+    source: "minimax",
   };
 }
 
