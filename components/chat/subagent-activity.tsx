@@ -18,10 +18,24 @@ import {
   TerminalIcon,
   UserIcon,
   KeyIcon,
+  BriefcaseIcon,
+  GitBranchIcon,
+  UsersIcon,
 } from "lucide-react";
 
 export interface SubAgentEvent {
-  agent: "researcher" | "coder" | "memory-keeper" | "writer" | "analyst" | "browser" | "knowledge" | "operator";
+  agent:
+    | "researcher"
+    | "coder"
+    | "memory-keeper"
+    | "writer"
+    | "analyst"
+    | "browser"
+    | "knowledge"
+    | "operator"
+    | "personalization"
+    | "leadgen"
+    | "developer";
   task: string;
   status: "started" | "thinking" | "tool-call" | "tool-result" | "done" | "error";
   message: string;
@@ -83,6 +97,24 @@ const AGENT_META: Record<
     color: "text-warning",
     bg: "bg-warning/10 border-warning/20",
   },
+  personalization: {
+    name: "Personalization",
+    icon: UserIcon,
+    color: "text-primary",
+    bg: "bg-primary/10 border-primary/20",
+  },
+  leadgen: {
+    name: "Lead Gen",
+    icon: UsersIcon,
+    color: "text-info",
+    bg: "bg-info/10 border-info/20",
+  },
+  developer: {
+    name: "Developer",
+    icon: GitBranchIcon,
+    color: "text-coral",
+    bg: "bg-coral/10 border-coral/20",
+  },
 };
 
 const TOOL_ICONS: Record<string, React.ElementType> = {
@@ -107,6 +139,26 @@ const TOOL_ICONS: Record<string, React.ElementType> = {
   secret_get: KeyIcon,
   secret_save: KeyIcon,
   secret_delete: KeyIcon,
+  // Lead Gen tools
+  fetchApiKey: KeyIcon,
+  searchPeople: UsersIcon,
+  searchCompanies: BriefcaseIcon,
+  lookupContact: SearchIcon,
+  lookupCompany: BriefcaseIcon,
+  delegateToLeadGen: UsersIcon,
+  // Developer tools
+  delegateToDeveloper: GitBranchIcon,
+  list_repos: GitBranchIcon,
+  read_file: BookOpenIcon,
+  search_code: SearchIcon,
+  create_issue: GitBranchIcon,
+  // Orchestrator delegation tools
+  delegateToResearcher: SearchIcon,
+  delegateToCoder: CodeIcon,
+  delegateToBrowser: CompassIcon,
+  delegateToMemoryKeeper: DatabaseIcon,
+  delegateToKnowledge: BookOpenIcon,
+  delegateToOperator: TerminalIcon,
 };
 
 export default function SubAgentActivity({
