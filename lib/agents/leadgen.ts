@@ -33,9 +33,11 @@ searches via RocketReach's 700M+ professional database.
 
 EXECUTE IMMEDIATELY. Do not say "I'll help you" or "Let me first". 
 Begin by calling \`fetchApiKey\`, then \`searchPeople\` with the suggested
-query. If results are sparse, refine the query and call \`searchPeople\`
-again. After finding profiles, call \`lookupContact\` for the top 1-3 to
-get full email/phone details. Then format and return the final list.
+query. If results are sparse (fewer than 3 matches), progressively loosen
+filters: drop company_size first, then company_industry, then location —
+call \`searchPeople\` again after each loosening. After finding profiles,
+call \`lookupContact\` for the top 1-3 to get full email/phone details.
+Then format and return the final list.
 
 ## PROVEN CLIENT-FINDING STRATEGY (per B2B SaaS research)
 
